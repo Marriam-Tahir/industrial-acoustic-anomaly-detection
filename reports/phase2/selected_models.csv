@@ -1,0 +1,9 @@
+group,selected_model,rule
+fan_id_00,dense,highest validation ROC-AUC (ties: dense)
+fan_id_02,dense,highest validation ROC-AUC (ties: dense)
+fan_id_04,dense,highest validation ROC-AUC (ties: dense)
+fan_id_06,dense,highest validation ROC-AUC (ties: dense)
+pump_id_00,dense,highest validation ROC-AUC (ties: dense)
+pump_id_02,dense,highest validation ROC-AUC (ties: dense)
+pump_id_04,dense,highest validation ROC-AUC (ties: dense)
+pump_id_06,dense,highest validation ROC-AUC (ties: dense)

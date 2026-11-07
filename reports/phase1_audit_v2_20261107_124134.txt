@@ -1,0 +1,1011 @@
+Phase 1 audit v2 | root=E:\Yusra\IndustrialAcousticAnamolyDetection | wav folder=E:\Yusra\IndustrialAcousticAnamolyDetection\data\interim\mono16k | assumed dB=6
+
+======================================================================
+STEP 0  Environment and project structure
+======================================================================
+  python: C:\Users\HP\anaconda3\envs\smartlistener\python.exe
+  [ OK ] smart_listener importable from E:\Yusra\IndustrialAcousticAnamolyDetection\src\smart_listener
+  .vscode/  ->  settings.json
+  config/  ->  audio_config.yaml
+  data/  ->  interim, manifests, processed
+  documents/  ->  Industrial-Acoustic-Anomaly-Detection (1).pptx, Smart_Listener_Updated_Plan.pdf
+  environment.yml
+  LICENSE
+  notebooks/  ->  01_inspect_group.ipynb, colab
+  pyproject.toml
+  README.md
+  scripts/  ->  audit_audio.py, build_manifest.py, check_env.py, download_mimii.py, extract_features.py, mimii_tool.py, prepare_mono.py, split_shift_report.py, verify_zips.py
+  src/  ->  smart_listener, smart_listener.egg-info
+  tests/  ->  __pycache__, conftest.py, test_audio.py, test_config.py, test_splits.py
+  tools/  ->  phase1_audit.py
+
+======================================================================
+STEP 1  Extracted WAV inventory
+======================================================================
+label       abnormal  normal
+machine id                  
+fan     00       407    1011
+        02       359    1016
+        04       348    1033
+        06       361    1015
+pump    00       143    1006
+        02       111    1005
+        04       100     702
+        06       102    1036
+  [ OK ] All 8 machine/ID counts equal the MIMII paper table (nothing missing)
+
+======================================================================
+STEP 2  WAV integrity (every header + 200 decoded)
+======================================================================
+  9755 files in 121s | sample rates {16000: 9755} | channels {1: 9755}
+  [ OK ] All readable, about 10 s each
+  [ OK ] Random decoded sample: finite and not silent
+
+======================================================================
+STEP 3  Manifest, splits and leakage
+======================================================================
+  data\manifests\manifest.csv  rows=9755  columns=['file_id', 'path', 'machine_type', 'machine_id', 'group', 'label_name', 'label', 'snr_db', 'index_in_label', 'sr', 'channels', 'duration_s', 'peak', 'rms', 'level_db', 'sha256', 'exclude_reason', 'split_ad', 'split_cls']
+  data\manifests\split_shift.csv  rows=8  columns=['group', 'train_mean_db', 'train_std_db', 'val_normal_shift', 'val_abnormal_shift', 'test_normal_shift', 'test_abnormal_shift']
+  [info] split_shift.csv has no path column: treated as a report table, not a manifest
+  [ OK ] 0 rows where folder label differs from label_name column
+  [ OK ] 0 duplicated paths in manifest
+  [ OK ] 0 rows share identical audio content (sha256)
+  [info] rows with an exclude_reason: 0
+  [ OK ] 0 manifest paths missing on disk
+
+  --- split column 'split_ad' ---
+  values: {'train': 5263, 'test': 1724, 'val': 1718, 'buffer': 1050}
+_lab                     abnormal  normal
+group      _s                            
+fan_id_00  other:buffer        40     160
+           test               184     184
+           train                0     484
+           val                183     183
+fan_id_02  other:buffer        40     160
+           test               160     160
+           train                0     537
+           val                159     159
+fan_id_04  other:buffer        40     160
+           test               154     154
+           train                0     565
+           val                154     154
+fan_id_06  other:buffer        40     160
+           test               160     160
+           train                0     534
+           val                161     161
+pump_id_00 other:buffer        20      80
+           test                62      62
+           train                0     803
+           val                 61      61
+pump_id_02 other:buffer        10      40
+           test                51      51
+           train                0     864
+           val                 50      50
+pump_id_04 other:buffer        10      40
+           test                45      45
+           train                0     572
+           val                 45      45
+pump_id_06 other:buffer        10      40
+           test                46      46
+           train                0     904
+           val                 46      46
+  [ OK ] [split_ad] clips in more than one split: 0
+  [ OK ] [split_ad] identical audio content in more than one split: 0
+  [ OK ] [split_ad] abnormal clips in train: 0
+  closest recording-order distance between a train clip and a val/test clip of the same label (bigger = safer):
+    fan_id_00    normal    min gap = 6
+    fan_id_02    normal    min gap = 6
+    fan_id_04    normal    min gap = 6
+    fan_id_06    normal    min gap = 6
+    pump_id_00   normal    min gap = 6
+    pump_id_02   normal    min gap = 6
+    pump_id_04   normal    min gap = 6
+    pump_id_06   normal    min gap = 6
+
+  --- split column 'split_cls' ---
+  values: {'train': 5058, 'test': 2514, 'val': 2183}
+_lab              abnormal  normal
+group      _s                     
+fan_id_00  train       407    1011
+fan_id_02  train       359    1016
+fan_id_04  val         348    1033
+fan_id_06  test        361    1015
+pump_id_00 train       143    1006
+pump_id_02 train       111    1005
+pump_id_04 val         100     702
+pump_id_06 test        102    1036
+  [ OK ] [split_cls] clips in more than one split: 0
+  [ OK ] [split_cls] identical audio content in more than one split: 0
+  [info] [split_cls] is not the anomaly-detection split (probably the fan-vs-pump split); only the overlap checks above apply
+
+======================================================================
+STEP 4  Feature cache
+======================================================================
+  data\processed\features_meta.json  0.0 MB
+  data\processed\logmel\fan_id_00.npy  113.6 MB
+  data\processed\logmel\fan_id_00_files.csv  0.0 MB
+  data\processed\logmel\fan_id_02.npy  110.2 MB
+  data\processed\logmel\fan_id_02_files.csv  0.0 MB
+  data\processed\logmel\fan_id_04.npy  110.7 MB
+  data\processed\logmel\fan_id_04_files.csv  0.0 MB
+  data\processed\logmel\fan_id_06.npy  110.3 MB
+  data\processed\logmel\fan_id_06_files.csv  0.0 MB
+  data\processed\logmel\pump_id_00.npy  92.1 MB
+  data\processed\logmel\pump_id_00_files.csv  0.0 MB
+  data\processed\logmel\pump_id_02.npy  89.4 MB
+  data\processed\logmel\pump_id_02_files.csv  0.0 MB
+  data\processed\logmel\pump_id_04.npy  64.3 MB
+  data\processed\logmel\pump_id_04_files.csv  0.0 MB
+  data\processed\logmel\pump_id_06.npy  91.2 MB
+  data\processed\logmel\pump_id_06_files.csv  0.0 MB
+  data\processed\norm\classifier.json  0.0 MB
+  data\processed\norm\fan_id_00_anomaly.json  0.0 MB
+  data\processed\norm\fan_id_02_anomaly.json  0.0 MB
+  data\processed\norm\fan_id_04_anomaly.json  0.0 MB
+  data\processed\norm\fan_id_06_anomaly.json  0.0 MB
+  data\processed\norm\pump_id_00_anomaly.json  0.0 MB
+  data\processed\norm\pump_id_02_anomaly.json  0.0 MB
+  data\processed\norm\pump_id_04_anomaly.json  0.0 MB
+  data\processed\norm\pump_id_06_anomaly.json  0.0 MB
+  [ OK ] fan_id_00.npy: shape (1418, 64, 313) float32, finite=True, manifest rows for this group=1418
+  [ OK ] fan_id_02.npy: shape (1375, 64, 313) float32, finite=True, manifest rows for this group=1375
+  [ OK ] fan_id_04.npy: shape (1381, 64, 313) float32, finite=True, manifest rows for this group=1381
+  [ OK ] fan_id_06.npy: shape (1376, 64, 313) float32, finite=True, manifest rows for this group=1376
+  [ OK ] pump_id_00.npy: shape (1149, 64, 313) float32, finite=True, manifest rows for this group=1149
+  [ OK ] pump_id_02.npy: shape (1116, 64, 313) float32, finite=True, manifest rows for this group=1116
+  [ OK ] pump_id_04.npy: shape (802, 64, 313) float32, finite=True, manifest rows for this group=802
+  [ OK ] pump_id_06.npy: shape (1138, 64, 313) float32, finite=True, manifest rows for this group=1138
+  [info] features_meta.json keys: ['created_utc', 'config_fingerprint', 'features', 'audio', 'versions', 'files_padded', 'files_trimmed']
+  [info] classifier.json keys: ['fitted_on', 'n_files', 'n_frames', 'n_mels', 'mean', 'std', 'config_fingerprint', 'file_ids_sha256']
+  [info] fan_id_00_anomaly.json keys: ['fitted_on', 'n_files', 'n_frames', 'n_mels', 'mean', 'std', 'config_fingerprint', 'file_ids_sha256']
+  [info] fan_id_02_anomaly.json keys: ['fitted_on', 'n_files', 'n_frames', 'n_mels', 'mean', 'std', 'config_fingerprint', 'file_ids_sha256']
+
+======================================================================
+STEP 5  pytest
+======================================================================
+.................................                                        [100%]
+33 passed in 67.81s (0:01:07)
+  [ OK ] pytest exit code 0
+
+======================================================================
+STEP 6  Handoff dump for Phase 2 (files printed so Claude can fit Phase 2 to your code)
+======================================================================
+
+----- FILE: config/audio_config.yaml -----
+# ONE place for every audio and split setting. Training, evaluation and the app must all read this file.
+# These are STARTING values. We tune them on validation data, never on test data.
+# If you change anything in "audio" or "features", ALL features must be rebuilt (the fingerprint will tell you).
+
+dataset:
+  zenodo_record: "3384388"        # official MIMII record (Hitachi)
+  snr_db: 6                       # we use the 6 dB recordings only
+  machine_types: [fan, pump]
+  machine_ids: [id_00, id_02, id_04, id_06]   # the only IDs in public release 1.0
+  zips:                           # file names and md5 checksums copied from the Zenodo page
+    fan:
+      file: "6_dB_fan.zip"
+      md5: "0890f7d3c2fd8448634e69ff1d66dd47"
+    pump:
+      file: "6_dB_pump.zip"
+      md5: "a09ba6060c10fc09cd4c8770213b0b9f"
+
+  # Official md5 checksums of ALL 12 files in the record (read from the Zenodo page, Oct 2026).
+  # We only USE the 6 dB fan and pump files; the others are listed so downloads can still be verified.
+  checksums:
+    "-6_dB_fan.zip": f02ae808a58d84b6815b7ec38ff30879
+    "-6_dB_pump.zip": d20b783a0ff9c93d58f452f98c37b112
+    "-6_dB_slider.zip": 49913eda7d37f182cbf8ed5c984140e0
+    "-6_dB_valve.zip": fdfaf185fea61b21e11952a070a4ada7
+    "0_dB_fan.zip": 6354d1cc2165c52168f9ef1bcd9c7c52
+    "0_dB_pump.zip": 488748295c3f60b25de07b58fe75b049
+    "0_dB_slider.zip": 4d674c21474f0646ecd75546db6c0c4e
+    "0_dB_valve.zip": 178478eb0d11c79080a35562bfdeee71
+    "6_dB_fan.zip": 0890f7d3c2fd8448634e69ff1d66dd47
+    "6_dB_pump.zip": a09ba6060c10fc09cd4c8770213b0b9f
+    "6_dB_slider.zip": 838c2b3441858359c4704ef13a1b27ff
+    "6_dB_valve.zip": fe5fb7c337cd701b1d31dc641e621892
+
+audio:
+  sample_rate: 16000              # Hz. Files are checked, never silently resampled.
+  channel_index: 0                # 8 microphones in the original; index 0 = microphone No. 1 (same as the dataset's baseline)
+  expected_duration_s: 10.0
+  duration_tolerance_s: 0.5       # clips further away than this are excluded; clips inside it are padded/trimmed to exactly 10 s
+
+features:
+  n_fft: 1024
+  hop_length: 512
+  n_mels: 64
+  fmin: 0
+  fmax: 8000                      # Nyquist for 16 kHz
+  power: 2.0
+  amin: 1.0e-10                   # floor before taking the logarithm (absolute dB, NO per-clip scaling)
+  window_frames: 64               # about 2 seconds of sound per window
+  window_hop_frames: 32           # windows overlap by half
+  normalization: global_per_mel_band   # mean/std per mel band, fitted on TRAINING files only
+
+quality:                          # these only raise warnings, except the exclusion rules documented in audit.py
+  clip_level: 0.999               # |sample| above this counts as clipped
+  clip_fraction_warn: 0.001
+  silence_block_ms: 100
+  silence_block_rms: 1.0e-4       # block RMS below this (full scale = 1.0) counts as silent
+  silence_fraction_warn: 0.5
+  drift_min_files: 30
+  drift_rho_warn: 0.3             # |Spearman rho| of loudness vs file number above this = recording order matters
+
+split:
+  seed: 42
+  anomaly:                        # normal-vs-abnormal detector: one model per machine, so splits are PER machine
+    strategy: interleaved         # interleaved = validation/test chunks spread over the whole recording, with gaps (default)
+                                  # block = one validation block at the start, one test block at the end; random = sensitivity check
+    abnormal_val_fraction: 0.5    # abnormal files go to validation/test (training uses normal only)
+    interleaved_max_blocks: 16    # most chunks the abnormal sequence is cut into (multiple of 4)
+    buffer_files: 5               # files dropped between blocks so neighbouring recordings never straddle a boundary
+    min_train_files: 300
+  classifier:                     # fan-vs-pump: split by whole machine, so a machine is never in two splits
+    train_ids: [id_00, id_02]
+    val_ids: [id_04]
+    test_ids: [id_06]
+
+paths:                            # relative to the repository folder
+  raw_zip_dir: Dataset            # where the original ZIPs live (never committed)
+  mono_dir: data/interim/mono16k
+  manifest_dir: data/manifests
+  features_dir: data/processed
+  figures_dir: reports/figures
+
+
+----- FILE: src/smart_listener/audio.py -----
+"""Audio loading and log-mel features.
+
+This is the ONLY place where feature maths lives. Training, evaluation and the web app must all call
+these functions, so the same sound always becomes the same numbers.
+"""
+import numpy as np
+import soundfile as sf
+import librosa
+
+
+def expected_samples(cfg: dict) -> int:
+    return int(round(cfg["audio"]["sample_rate"] * cfg["audio"]["expected_duration_s"]))
+
+
+def expected_frames(cfg: dict) -> int:
+    """Number of spectrogram frames for one clip (librosa pads the edges, hence the +1)."""
+    return 1 + expected_samples(cfg) // cfg["features"]["hop_length"]
+
+
+def load_mono_wav(path, cfg: dict) -> np.ndarray:
+    """Read a mono WAV as float32 in [-1, 1]. Refuses wrong formats instead of silently fixing them."""
+    y, sr = sf.read(str(path), dtype="float32", always_2d=True)
+    if sr != cfg["audio"]["sample_rate"]:
+        raise ValueError(f"{path}: sample rate is {sr}, expected {cfg['audio']['sample_rate']}")
+    if y.shape[1] != 1:
+        raise ValueError(f"{path}: has {y.shape[1]} channels, expected 1 (mono)")
+    return y[:, 0]
+
+
+def fix_length(y: np.ndarray, n: int):
+    """Pad with zeros or trim to exactly n samples. Returns (signal, 'ok' | 'padded' | 'trimmed')."""
+    if len(y) == n:
+        return y, "ok"
+    if len(y) > n:
+        return y[:n], "trimmed"
+    return np.pad(y, (0, n - len(y))), "padded"
+
+
+def log_mel(y: np.ndarray, cfg: dict) -> np.ndarray:
+    """Log-mel spectrogram in absolute decibels, shape (n_mels, frames), float32.
+
+    Deliberately NO per-clip scaling: top_db=None and ref=1.0 keep the true loudness, because a louder
+    or quieter machine can itself be a sign of a problem."""
+    f = cfg["features"]
+    mel = librosa.feature.melspectrogram(
+        y=y, sr=cfg["audio"]["sample_rate"], n_fft=f["n_fft"], hop_length=f["hop_length"],
+        n_mels=f["n_mels"], fmin=f["fmin"], fmax=f["fmax"], power=f["power"], center=True)
+    return librosa.power_to_db(mel, ref=1.0, amin=f["amin"], top_db=None).astype(np.float32)
+
+
+class RunningStats:
+    """Mean and standard deviation per mel band, computed file by file (so it fits in 8 GB of RAM)."""
+
+    def __init__(self, n_mels: int):
+        self.n_frames = 0
+        self.n_files = 0
+        self._sum = np.zeros(n_mels, dtype=np.float64)
+        self._sumsq = np.zeros(n_mels, dtype=np.float64)
+
+    def update(self, spec: np.ndarray) -> None:
+        x = spec.astype(np.float64)
+        self.n_frames += x.shape[1]
+        self.n_files += 1
+        self._sum += x.sum(axis=1)
+        self._sumsq += (x ** 2).sum(axis=1)
+
+    def finalize(self, min_std: float = 1e-6):
+        if self.n_frames == 0:
+            raise ValueError("No data was given to RunningStats")
+        mean = self._sum / self.n_frames
+        var = np.maximum(self._sumsq / self.n_frames - mean ** 2, 0.0)
+        return mean, np.maximum(np.sqrt(var), min_std)
+
+
+def apply_norm(spec: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
+    """Standardise each mel band with statistics that were fitted on TRAINING data only."""
+    return ((spec - mean[:, None]) / std[:, None]).astype(np.float32)
+
+
+def make_windows(spec: np.ndarray, window_frames: int, hop_frames: int) -> np.ndarray:
+    """Cut one spectrogram (n_mels, frames) into overlapping windows -> (n_windows, n_mels, window_frames)."""
+    n_frames = spec.shape[1]
+    if n_frames < window_frames:
+        raise ValueError(f"spectrogram has {n_frames} frames, fewer than the window size {window_frames}")
+    starts = range(0, n_frames - window_frames + 1, hop_frames)
+    return np.stack([spec[:, s:s + window_frames] for s in starts])
+
+
+----- FILE: scripts/extract_features.py -----
+"""Turn every manifest file into a log-mel spectrogram and fit normalisation on TRAINING files only.
+
+    python scripts/extract_features.py            # skips machines that are already done
+    python scripts/extract_features.py --force    # rebuild everything
+
+Writes, under data/processed/:
+    logmel/<type>_<id>.npy          float32 array (n_files, 64, 313), NOT normalised
+    logmel/<type>_<id>_files.csv    which file_id is in which row
+    norm/<type>_<id>_anomaly.json   mean/std fitted on that machine's anomaly-TRAINING files
+    norm/classifier.json            mean/std fitted on classifier-TRAINING files (both machine types)
+    features_meta.json              settings fingerprint and library versions
+"""
+import argparse
+import json
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import librosa
+import numpy as np
+import pandas as pd
+import soundfile
+
+from smart_listener import audio
+from smart_listener.config import config_fingerprint, load_config, resolve_path
+
+
+def _save_stats(path: Path, stats: audio.RunningStats, fitted_on: str, file_ids, cfg: dict) -> None:
+    mean, std = stats.finalize()
+    payload = {"fitted_on": fitted_on, "n_files": stats.n_files, "n_frames": stats.n_frames,
+               "n_mels": len(mean), "mean": mean.tolist(), "std": std.tolist(),
+               "config_fingerprint": config_fingerprint(cfg),
+               "file_ids_sha256": __import__("hashlib").sha256("\n".join(sorted(file_ids)).encode()).hexdigest()}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Extract log-mel features")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--mono-dir")
+    args = ap.parse_args()
+
+    cfg = load_config()
+    root = Path(args.mono_dir) if args.mono_dir else resolve_path(cfg, "mono_dir")
+    mpath = resolve_path(cfg, "manifest_dir") / "manifest.csv"
+    if not mpath.exists():
+        print(f"{mpath} not found. Run scripts/build_manifest.py first.")
+        return 1
+    manifest = pd.read_csv(mpath, keep_default_na=False)
+    out = resolve_path(cfg, "features_dir")
+    (out / "logmel").mkdir(parents=True, exist_ok=True)
+
+    n_mels, n_frames, n_samples = cfg["features"]["n_mels"], audio.expected_frames(cfg), audio.expected_samples(cfg)
+    fingerprint = config_fingerprint(cfg)
+    fixed = {"padded": 0, "trimmed": 0}
+    t0 = time.time()
+
+    for group, g in manifest.groupby("group", sort=True):
+        g = g.sort_values(["label_name", "index_in_label"]).reset_index(drop=True)
+        npy = out / "logmel" / f"{group}.npy"
+        fcsv = out / "logmel" / f"{group}_files.csv"
+        meta_path = out / "features_meta.json"
+        cache_valid = False
+        if meta_path.exists():
+             with open(meta_path, encoding="utf-8") as f:
+                  old_meta = json.load(f)
+                  cache_valid = old_meta.get("config_fingerprint") == fingerprint
+                  if npy.exists() and fcsv.exists() and not args.force and cache_valid:
+                      old = pd.read_csv(fcsv)
+                      if list(old["file_id"]) == list(g["file_id"]):
+                          print(f"[skip] {group}: already done ({len(g)} files)")
+                          continue
+        arr = np.zeros((len(g), n_mels, n_frames), dtype=np.float32)
+        for i, p in enumerate(g["path"]):
+            y = audio.load_mono_wav(root / p, cfg)
+            y, how = audio.fix_length(y, n_samples)
+            if how != "ok":
+                fixed[how] += 1
+            spec = audio.log_mel(y, cfg)
+            if spec.shape != (n_mels, n_frames):
+                raise RuntimeError(f"{p}: unexpected spectrogram shape {spec.shape}")
+            arr[i] = spec
+        if not np.isfinite(arr).all():
+            raise RuntimeError(f"{group}: NaN or infinite values in features")
+        np.save(npy, arr)
+        g[["file_id"]].to_csv(fcsv, index=False)
+        print(f"[done] {group}: {len(g)} files, shape {arr.shape}, range {arr.min():.1f} to {arr.max():.1f} dB "
+              f"({time.time() - t0:.0f} s)")
+
+    # ---- normalisation statistics: TRAINING files only ----
+    for group, g in manifest.groupby("group", sort=True):
+        g = g.sort_values(["label_name", "index_in_label"]).reset_index(drop=True)
+        arr = np.load(out / "logmel" / f"{group}.npy", mmap_mode="r")
+        train = g[g["split_ad"] == "train"]
+        assert (train["label"] == 0).all(), "anomaly training split must contain normal files only"
+        st = audio.RunningStats(n_mels)
+        for i in train.index:
+            st.update(arr[i])
+        _save_stats(out / "norm" / f"{group}_anomaly.json", st, "split_ad == train", train["file_id"], cfg)
+    st = audio.RunningStats(n_mels)
+    cls_ids = []
+    for group, g in manifest.groupby("group", sort=True):
+        g = g.sort_values(["label_name", "index_in_label"]).reset_index(drop=True)
+        arr = np.load(out / "logmel" / f"{group}.npy", mmap_mode="r")
+        for i in g.index[g["split_cls"] == "train"]:
+            st.update(arr[i])
+            cls_ids.append(g.loc[i, "file_id"])
+    if st.n_files:
+        _save_stats(out / "norm" / "classifier.json", st, "split_cls == train", cls_ids, cfg)
+
+    meta = {"created_utc": datetime.now(timezone.utc).isoformat(), "config_fingerprint": fingerprint,
+            "features": cfg["features"], "audio": cfg["audio"],
+            "versions": {"numpy": np.__version__, "librosa": librosa.__version__, "soundfile": soundfile.__version__},
+            "files_padded": fixed["padded"], "files_trimmed": fixed["trimmed"]}
+    with open(out / "features_meta.json", "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, indent=2)
+    print(f"\nFeatures done. Config fingerprint: {fingerprint}. Padded: {fixed['padded']}, trimmed: {fixed['trimmed']}.")
+    print(f"Normalisation statistics saved in {out / 'norm'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+----- FILE: scripts/build_manifest.py -----
+"""Build the manifest with labels and leakage-safe splits.  Run after audit_audio.py:
+
+    python scripts/build_manifest.py
+
+Writes data/manifests/manifest.csv (one row per usable file), excluded.csv, and manifest_summary.json.
+Stops with an error if any leakage or labelling check fails.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+from smart_listener.config import load_config, resolve_path
+from smart_listener.manifest import (assign_anomaly_splits, assign_classifier_splits, scan_folder,
+                                     validate_manifest)
+
+# Numbers from Table 1 of the MIMII paper (normal, abnormal). For comparison only; the real files decide.
+PAPER_COUNTS = {
+    ("fan", "id_00"): (1011, 407), ("fan", "id_02"): (1016, 359), ("fan", "id_04"): (1033, 348), ("fan", "id_06"): (1015, 361),
+    ("pump", "id_00"): (1006, 143), ("pump", "id_02"): (1005, 111), ("pump", "id_04"): (702, 100), ("pump", "id_06"): (1036, 102),
+}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Build the dataset manifest and splits")
+    ap.add_argument("--mono-dir")
+    ap.add_argument("--no-audit", action="store_true", help="skip the audit requirement (not recommended)")
+    args = ap.parse_args()
+
+    cfg = load_config()
+    root = Path(args.mono_dir) if args.mono_dir else resolve_path(cfg, "mono_dir")
+    mdir = resolve_path(cfg, "manifest_dir")
+    mdir.mkdir(parents=True, exist_ok=True)
+
+    df, unexpected = scan_folder(root, cfg)
+    if df.empty:
+        print(f"No files found under {root}")
+        return 1
+    if unexpected:
+        print(f"WARNING: {len(unexpected)} unexpected files ignored, for example: {unexpected[:5]}")
+
+    audit_path = mdir / "audit.csv"
+    if audit_path.exists():
+        audit = pd.read_csv(audit_path, keep_default_na=False)
+        cols = ["path", "sr", "channels", "duration_s", "peak", "rms", "level_db", "sha256", "exclude", "exclude_reason"]
+        df = df.merge(audit[cols], on="path", how="left", validate="one_to_one")
+        if df["exclude"].eq("").any():
+            print("ERROR: audit.csv does not cover every file. Run scripts/audit_audio.py again.")
+            return 1
+        df["exclude"] = df["exclude"].astype(str).str.lower().eq("true")
+        excluded = df[df["exclude"]]
+        excluded.to_csv(mdir / "excluded.csv", index=False)
+        df = df[~df["exclude"]].drop(columns=["exclude"]).reset_index(drop=True)
+        print(f"Audit applied: {len(excluded)} files excluded (listed in excluded.csv), {len(df)} kept.")
+        # keep the original file numbering so block splits still respect recording order
+    elif args.no_audit:
+        print("WARNING: no audit applied. Quality problems and duplicates will NOT be removed.")
+    else:
+        print(f"ERROR: {audit_path} not found. Run  python scripts/audit_audio.py  first (or use --no-audit).")
+        return 1
+
+    df = assign_anomaly_splits(df, cfg)
+    df = assign_classifier_splits(df, cfg)
+    problems = validate_manifest(df, cfg)
+    if problems:
+        print("\nLEAKAGE / LABEL CHECKS FAILED:")
+        for p in problems:
+            print("  -", p)
+        return 2
+    df.to_csv(mdir / "manifest.csv", index=False)
+
+    print("\n=== FILES PER MACHINE AND LABEL (compared with the paper's table) ===")
+    mismatches = 0
+    for (mtype, mid), g in df.groupby(["machine_type", "machine_id"]):
+        n, a = int((g["label"] == 0).sum()), int((g["label"] == 1).sum())
+        ref = PAPER_COUNTS.get((mtype, mid))
+        note = "" if ref is None or ref == (n, a) else f"   <-- paper says normal={ref[0]}, abnormal={ref[1]}"
+        mismatches += bool(note)
+        print(f"  {mtype:<5} {mid}: normal={n:<5} abnormal={a:<4}{note}")
+    print("\n=== ANOMALY SPLITS (rows = machine, columns = split) ===")
+    print(df.groupby(["group", "split_ad"]).size().unstack(fill_value=0).to_string())
+    print("\n=== CLASSIFIER SPLITS (fan vs pump, split by whole machine) ===")
+    print(df.groupby(["split_cls", "machine_type"]).size().unstack(fill_value=0).to_string())
+
+    summary = {"files_in_manifest": int(len(df)), "count_differences_from_paper": mismatches,
+               "strategy": cfg["split"]["anomaly"]["strategy"], "seed": cfg["split"]["seed"]}
+    with open(mdir / "manifest_summary.json", "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, indent=2)
+    print(f"\nAll leakage and label checks PASSED. Saved {mdir / 'manifest.csv'}")
+    if mismatches:
+        print(f"NOTE: {mismatches} machine(s) differ from the paper's counts. Check excluded.csv; send me this table.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+----- FILE: src/smart_listener/__init__.py -----
+__version__ = "0.1.0"
+
+
+----- FILE: src/smart_listener/audit.py -----
+"""Quality checks for the extracted mono WAV files.
+
+EXCLUDED (technical corruption only): unreadable, wrong sample rate, not mono, wrong length, completely
+silent, exact duplicates (only the first copy is kept), and label conflicts (same audio, different label).
+ONLY WARNED (never excluded): clipping, long silent stretches, unusual loudness. These can be genuine
+anomalies, and removing them would make the abnormal test data artificially easy.
+"""
+import hashlib
+
+import numpy as np
+import pandas as pd
+import soundfile as sf
+
+from smart_listener import audio
+
+
+def audit_file(path, cfg: dict) -> dict:
+    """Measure one file. Never raises: problems are recorded in the result."""
+    q = cfg["quality"]
+    rec = {"readable": False, "sr": np.nan, "channels": np.nan, "frames": np.nan, "duration_s": np.nan,
+           "peak": np.nan, "rms": np.nan, "dc_offset": np.nan, "clip_fraction": np.nan,
+           "silence_fraction": np.nan, "level_db": np.nan, "sha256": "", "error": ""}
+    try:
+        info = sf.info(str(path))
+        rec.update(sr=info.samplerate, channels=info.channels, frames=info.frames,
+                   duration_s=round(info.frames / info.samplerate, 4))
+        data, _ = sf.read(str(path), dtype="int16", always_2d=True)
+    except Exception as exc:  # noqa: BLE001 - any read problem is a finding, not a crash
+        rec["error"] = repr(exc)
+        return rec
+    rec["readable"] = True
+    rec["sha256"] = hashlib.sha256(data.tobytes()).hexdigest()
+    if data.shape[0] == 0:
+        return rec
+    x = data[:, 0].astype(np.float32) / 32768.0
+    rec["peak"] = float(np.abs(x).max())
+    rec["rms"] = float(np.sqrt(np.mean(x.astype(np.float64) ** 2)))
+    rec["dc_offset"] = float(x.mean())
+    rec["clip_fraction"] = float(np.mean(np.abs(x) >= q["clip_level"]))
+    block = max(1, int(cfg["audio"]["sample_rate"] * q["silence_block_ms"] / 1000))
+    n_blocks = len(x) // block
+    if n_blocks:
+        b = x[:n_blocks * block].reshape(n_blocks, block)
+        rec["silence_fraction"] = float(np.mean(np.sqrt((b.astype(np.float64) ** 2).mean(axis=1)) < q["silence_block_rms"]))
+    if info.samplerate == cfg["audio"]["sample_rate"] and len(x) >= cfg["features"]["n_fft"]:
+        rec["level_db"] = float(audio.log_mel(x, cfg).mean())
+    return rec
+
+
+def decide_exclusions(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Add columns exclude (bool), exclude_reason, and warning flags. df must be in manifest order."""
+    a, q = cfg["audio"], cfg["quality"]
+    out = df.copy()
+    reason = pd.Series("", index=out.index, dtype=object)
+
+    def mark(mask, text):
+        nonlocal reason
+        mask = mask & (reason == "")
+        reason = reason.mask(mask, text)
+
+    mark(~out["readable"].astype(bool), "unreadable")
+    mark(out["sr"] != a["sample_rate"], "wrong_sample_rate")
+    mark(out["channels"] != 1, "not_mono")
+    mark((out["duration_s"] - a["expected_duration_s"]).abs() > a["duration_tolerance_s"], "wrong_duration")
+    mark(out["peak"] == 0, "silent")
+
+    ok = out[reason == ""]
+    for sha, g in ok[ok["sha256"] != ""].groupby("sha256"):
+        if len(g) < 2:
+            continue
+        if g["label"].nunique() > 1:
+            reason.loc[g.index] = "label_conflict"
+        else:
+            keep = g.index[0]
+            reason.loc[g.index[1:]] = f"duplicate_of:{out.loc[keep, 'file_id']}"
+
+    out["exclude_reason"] = reason
+    out["exclude"] = reason != ""
+    out["warn_clipping"] = out["clip_fraction"] > q["clip_fraction_warn"]
+    out["warn_silence"] = out["silence_fraction"] > q["silence_fraction_warn"]
+    return out
+
+
+def drift_table(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Does loudness change with the file number? A strong trend means neighbouring recordings are
+    similar, which is exactly why we split in blocks with gaps."""
+    from scipy.stats import spearmanr
+
+    q = cfg["quality"]
+    rows = []
+    kept = df[~df["exclude"] & df["level_db"].notna()]
+    for (mtype, mid, label), g in kept.groupby(["machine_type", "machine_id", "label_name"]):
+        if len(g) < q["drift_min_files"]:
+            continue
+        rho, p = spearmanr(g["index_in_label"], g["level_db"])
+        rows.append({"machine_type": mtype, "machine_id": mid, "label_name": label, "n_files": len(g),
+                     "rho": float(rho), "p_value": float(p), "strong_trend": bool(abs(rho) >= q["drift_rho_warn"])})
+    return pd.DataFrame(rows)
+
+
+----- FILE: src/smart_listener/config.py -----
+"""Load and check the single configuration file (config/audio_config.yaml)."""
+import hashlib
+import json
+from pathlib import Path
+
+import yaml
+
+SECTIONS = ("dataset", "audio", "features", "quality", "split", "paths")
+
+
+def project_root() -> Path:
+    """Return the repository folder (the one that contains config/ and src/)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _pos_int(section: dict, key: str, where: str) -> None:
+    v = section.get(key)
+    if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
+        raise ValueError(f"{where}.{key} must be a positive whole number, got {v!r}")
+
+
+def _pos_num(section: dict, key: str, where: str) -> None:
+    v = section.get(key)
+    if not _is_number(v) or v <= 0:
+        raise ValueError(f"{where}.{key} must be a positive number, got {v!r}")
+
+
+def validate_config(cfg: dict) -> None:
+    """Raise ValueError with a clear message if the configuration is unusable."""
+    for name in SECTIONS:
+        if not isinstance(cfg.get(name), dict):
+            raise ValueError(f"Missing section '{name}' in the configuration file")
+
+    a, f, q, s, d = cfg["audio"], cfg["features"], cfg["quality"], cfg["split"], cfg["dataset"]
+
+    _pos_int(a, "sample_rate", "audio")
+    if not isinstance(a.get("channel_index"), int) or a["channel_index"] < 0:
+        raise ValueError("audio.channel_index must be 0 or a positive whole number")
+    _pos_num(a, "expected_duration_s", "audio")
+    if not _is_number(a.get("duration_tolerance_s")) or a["duration_tolerance_s"] < 0:
+        raise ValueError("audio.duration_tolerance_s must be 0 or a positive number")
+
+    for key in ("n_fft", "hop_length", "n_mels", "window_frames", "window_hop_frames"):
+        _pos_int(f, key, "features")
+    if f["hop_length"] > f["n_fft"]:
+        raise ValueError("features.hop_length must not be larger than features.n_fft")
+    if f["window_hop_frames"] > f["window_frames"]:
+        raise ValueError("features.window_hop_frames must not be larger than features.window_frames")
+    for key in ("power", "amin"):
+        _pos_num(f, key, "features")
+    if not _is_number(f.get("fmin")) or f["fmin"] < 0:
+        raise ValueError("features.fmin must be 0 or a positive number")
+    if not _is_number(f.get("fmax")) or f["fmax"] <= f["fmin"] or f["fmax"] > a["sample_rate"] / 2:
+        raise ValueError("features.fmax must be above fmin and not above half the sample rate")
+    if f.get("normalization") != "global_per_mel_band":
+        raise ValueError("features.normalization must be 'global_per_mel_band'")
+
+    for key in ("clip_level", "clip_fraction_warn", "silence_block_rms", "silence_fraction_warn", "drift_rho_warn"):
+        _pos_num(q, key, "quality")
+    _pos_int(q, "silence_block_ms", "quality")
+    _pos_int(q, "drift_min_files", "quality")
+
+    _pos_int(s, "seed", "split")
+    an = s.get("anomaly")
+    if not isinstance(an, dict):
+        raise ValueError("Missing section 'split.anomaly'")
+    if an.get("strategy") not in ("interleaved", "block", "random"):
+        raise ValueError("split.anomaly.strategy must be 'interleaved', 'block' or 'random'")
+    if not _is_number(an.get("abnormal_val_fraction")) or not 0 < an["abnormal_val_fraction"] < 1:
+        raise ValueError("split.anomaly.abnormal_val_fraction must be between 0 and 1")
+    if not isinstance(an.get("buffer_files"), int) or an["buffer_files"] < 0:
+        raise ValueError("split.anomaly.buffer_files must be 0 or a positive whole number")
+    _pos_int(an, "min_train_files", "split.anomaly")
+
+    cl = s.get("classifier")
+    if not isinstance(cl, dict):
+        raise ValueError("Missing section 'split.classifier'")
+    seen = []
+    for key in ("train_ids", "val_ids", "test_ids"):
+        ids = cl.get(key)
+        if not isinstance(ids, list) or not ids:
+            raise ValueError(f"split.classifier.{key} must be a non-empty list")
+        seen += ids
+    if len(seen) != len(set(seen)):
+        raise ValueError("split.classifier: the same machine id appears in more than one split")
+    unknown = set(seen) - set(d.get("machine_ids", []))
+    if unknown:
+        raise ValueError(f"split.classifier uses ids that are not in dataset.machine_ids: {sorted(unknown)}")
+
+    for key in ("mono_dir", "manifest_dir", "features_dir", "figures_dir"):
+        if not isinstance(cfg["paths"].get(key), str) or not cfg["paths"][key]:
+            raise ValueError(f"paths.{key} must be a folder path (text)")
+
+
+def load_config(path=None) -> dict:
+    """Read the YAML configuration. Uses config/audio_config.yaml when no path is given."""
+    path = Path(path) if path else project_root() / "config" / "audio_config.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {path}")
+    with open(path, encoding="utf-8") as fh:
+        cfg = yaml.safe_load(fh)
+    if not isinstance(cfg, dict):
+        raise ValueError(f"{path} is empty or not a valid YAML mapping")
+    validate_config(cfg)
+    return cfg
+
+
+def config_fingerprint(cfg: dict) -> str:
+    """Short code that changes whenever any audio or feature setting changes.
+
+    Saved next to every feature file. Training and the app compare it, so features made with
+    different settings can never be mixed by accident."""
+    payload = {"audio": cfg["audio"], "features": cfg["features"]}
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def resolve_path(cfg: dict, key: str) -> Path:
+    """Turn a relative folder from the config (for example 'mono_dir') into a full path."""
+    return project_root() / cfg["paths"][key]
+
+
+----- FILE: src/smart_listener/manifest.py -----
+"""Dataset manifest: one row per audio file, with its label and its split.
+
+Labels come ONLY from the folder name (normal / abnormal). Splits are assigned here, on whole files,
+BEFORE any windowing, so overlapping windows can never leak between train, validation and test.
+"""
+import re
+import zlib
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+LABELS = {"normal": 0, "abnormal": 1}
+
+
+def natural_key(text: str):
+    """Sort 'file2' before 'file10' (and keep zero-padded names in order)."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", text)]
+
+
+# ----------------------------------------------------------------------------- scanning
+def scan_folder(root, cfg: dict):
+    """Find every WAV under root/<type>/<id>/<label>/. Returns (DataFrame, list of unexpected paths)."""
+    root = Path(root)
+    types = set(cfg["dataset"]["machine_types"])
+    ids = set(cfg["dataset"]["machine_ids"])
+    rows, unexpected = [], []
+    for p in sorted(root.rglob("*")):
+        if p.is_dir():
+            continue
+        parts = p.relative_to(root).parts
+        if p.suffix.lower() != ".wav" or len(parts) != 4 or parts[0] not in types \
+                or parts[1] not in ids or parts[2] not in LABELS:
+            if p.suffix.lower() != ".csv":           # inventory CSVs are expected
+                unexpected.append(p.relative_to(root).as_posix())
+            continue
+        mtype, mid, label_name, fname = parts
+        rows.append({"file_id": f"{mtype}_{mid}_{label_name}_{Path(fname).stem}",
+                     "path": p.relative_to(root).as_posix(),
+                     "machine_type": mtype, "machine_id": mid, "group": f"{mtype}_{mid}",
+                     "label_name": label_name, "label": LABELS[label_name],
+                     "snr_db": cfg["dataset"]["snr_db"]})
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df, unexpected
+    # natural order of the file names inside each machine and label (this order defines the "blocks")
+    df["_k"] = df["path"].map(lambda s: tuple(natural_key(Path(s).name)))
+    df = df.sort_values(["machine_type", "machine_id", "label_name", "_k"], kind="stable")
+    df = df.drop(columns="_k").reset_index(drop=True)
+    df["index_in_label"] = df.groupby(["machine_type", "machine_id", "label_name"]).cumcount()
+    return df, unexpected
+
+
+# ----------------------------------------------------------------------------- anomaly-detector splits
+def _group_seed(seed: int, group: str) -> int:
+    return (seed + zlib.crc32(group.encode("utf-8"))) % (2 ** 32)
+
+
+def _block_split(normal_pos, abn_pos, an_cfg, group):
+    """Return dict split -> list of row positions for ONE machine. Layout for normal files:
+    [validation block][gap][ ... training ... ][gap][test block]. Abnormal: [validation][gap][test]."""
+    b = an_cfg["buffer_files"]
+    frac = an_cfg["abnormal_val_fraction"]
+    a_n, n_n = len(abn_pos), len(normal_pos)
+    v = int((a_n - b) * frac)
+    t = a_n - b - v
+    if v < 1 or t < 1:
+        raise ValueError(f"{group}: only {a_n} abnormal files, too few to make validation and test sets")
+    n_train = n_n - v - t - 2 * b
+    if n_train < an_cfg["min_train_files"]:
+        raise ValueError(f"{group}: only {n_train} normal files would remain for training "
+                         f"(minimum {an_cfg['min_train_files']})")
+    return {
+        "val": list(abn_pos[:v]) + list(normal_pos[:v]),
+        "test": list(abn_pos[a_n - t:]) + list(normal_pos[n_n - t:]),
+        "train": list(normal_pos[v + b:n_n - t - b]),
+        "buffer": list(abn_pos[v:v + b]) + list(normal_pos[v:v + b]) + list(normal_pos[n_n - t - b:n_n - t]),
+    }
+
+
+def _interleaved_split(normal_pos, abn_pos, an_cfg, group):
+    """Spread validation and test over the WHOLE recording, so train, validation and test see the same
+    sessions, loudness and fault types (a single block at each end would not).
+
+    The abnormal sequence is cut into K chunks (K a multiple of 4). Chunks go to validation, test, test,
+    validation, validation, test, test, ... so both sets reach early and late recordings. The first
+    `buffer` files of a chunk are dropped whenever the previous chunk belongs to the other set. For each chunk, the SAME relative stretch of the
+    normal sequence supplies exactly as many normal files, centred in the chunk with a gap on both sides; all other normal files
+    are training files. So validation and test always have equal normal and abnormal counts."""
+    b = an_cfg["buffer_files"]
+    a_n, n_n = len(abn_pos), len(normal_pos)
+    k = int(np.clip((a_n // 15) // 4 * 4, 4, an_cfg.get("interleaved_max_blocks", 16)))
+    a_chunks = np.array_split(np.arange(a_n), k)
+    n_chunks = np.array_split(np.arange(n_n), k)
+    parts = {"val": [], "test": [], "train": [], "buffer": []}
+    for j, (ac, nc) in enumerate(zip(a_chunks, n_chunks)):
+        name = "val" if j % 4 in (0, 3) else "test"
+        prev = "val" if (j - 1) % 4 in (0, 3) else "test"
+        keep_a = ac[b:] if (j > 0 and prev != name) else ac   # gap only where val meets test
+        parts["buffer"] += [abn_pos[i] for i in ac[:len(ac) - len(keep_a)]]
+        parts[name] += [abn_pos[i] for i in keep_a]
+        s = len(keep_a)
+        if s + 2 * b > len(nc):
+            raise ValueError(f"{group}: normal chunk {j} too short for {s} files plus gaps")
+        pre = (len(nc) - s - 2 * b) // 2             # centre the evaluation files inside the chunk
+        parts["train"] += [normal_pos[i] for i in nc[:pre]]
+        parts["buffer"] += [normal_pos[i] for i in nc[pre:pre + b]]
+        parts[name] += [normal_pos[i] for i in nc[pre + b:pre + b + s]]
+        parts["buffer"] += [normal_pos[i] for i in nc[pre + b + s:pre + 2 * b + s]]
+        parts["train"] += [normal_pos[i] for i in nc[pre + 2 * b + s:]]
+    if min(len(parts["val"]), len(parts["test"])) // 2 < 5 or len(parts["train"]) < an_cfg["min_train_files"]:
+        raise ValueError(f"{group}: too few files after interleaved split "
+                         f"(train {len(parts['train'])}, val {len(parts['val'])}, test {len(parts['test'])})")
+    return parts
+
+
+def _random_split(normal_pos, abn_pos, an_cfg, group, seed):
+    rng = np.random.default_rng(_group_seed(seed, group))
+    a_n, n_n = len(abn_pos), len(normal_pos)
+    v = int(a_n * an_cfg["abnormal_val_fraction"])
+    t = a_n - v
+    if v < 1 or t < 1:
+        raise ValueError(f"{group}: only {a_n} abnormal files, too few to make validation and test sets")
+    if n_n - v - t < an_cfg["min_train_files"]:
+        raise ValueError(f"{group}: too few normal files left for training")
+    a = rng.permutation(np.array(abn_pos))
+    n = rng.permutation(np.array(normal_pos))
+    return {"val": list(a[:v]) + list(n[:v]), "test": list(a[v:]) + list(n[v:v + t]),
+            "train": list(n[v + t:]), "buffer": []}
+
+
+def assign_anomaly_splits(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Add column split_ad (train / val / test / buffer) for the normal-vs-abnormal detector.
+
+    train = normal files only. val and test each contain as many normal as abnormal files."""
+    out = df.copy()
+    out["split_ad"] = "unused"
+    an = cfg["split"]["anomaly"]
+    for group, g in out.groupby("group"):
+        normal = list(g[g["label"] == 0].sort_values("index_in_label").index)
+        abn = list(g[g["label"] == 1].sort_values("index_in_label").index)
+        if an["strategy"] == "interleaved":
+            parts = _interleaved_split(normal, abn, an, group)
+        elif an["strategy"] == "block":
+            parts = _block_split(normal, abn, an, group)
+        else:
+            parts = _random_split(normal, abn, an, group, cfg["split"]["seed"])
+        for name, idx in parts.items():
+            out.loc[idx, "split_ad"] = name
+    return out
+
+
+# ----------------------------------------------------------------------------- classifier splits
+def assign_classifier_splits(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Add column split_cls for fan-vs-pump: whole machines go to ONE split only."""
+    cl = cfg["split"]["classifier"]
+    mapping = {i: "train" for i in cl["train_ids"]}
+    mapping.update({i: "val" for i in cl["val_ids"]})
+    mapping.update({i: "test" for i in cl["test_ids"]})
+    out = df.copy()
+    out["split_cls"] = out["machine_id"].map(mapping).fillna("unused")
+    for split in ("train", "val", "test"):
+        present = set(out.loc[out["split_cls"] == split, "machine_type"])
+        missing = set(cfg["dataset"]["machine_types"]) - present
+        if missing:
+            raise ValueError(f"classifier split '{split}' has no files for {sorted(missing)}")
+    return out
+
+
+# ----------------------------------------------------------------------------- checks
+def validate_manifest(df: pd.DataFrame, cfg: dict) -> list:
+    """Return a list of problems (an empty list means every leakage and labelling check passed)."""
+    problems = []
+    if df["file_id"].duplicated().any():
+        problems.append("duplicate file_id values")
+    if df
+
+----- first 3 manifest rows -----
+                                                                               0                                                                 1                                                                 2
+file_id                                              fan_id_00_abnormal_00000000                                       fan_id_00_abnormal_00000001                                       fan_id_00_abnormal_00000002
+path                                             fan/id_00/abnormal/00000000.wav                                   fan/id_00/abnormal/00000001.wav                                   fan/id_00/abnormal/00000002.wav
+machine_type                                                                 fan                                                               fan                                                               fan
+machine_id                                                                 id_00                                                             id_00                                                             id_00
+group                                                                  fan_id_00                                                         fan_id_00                                                         fan_id_00
+label_name                                                              abnormal                                                          abnormal                                                          abnormal
+label                                                                          1                                                                 1                                                                 1
+snr_db                                                                         6                                                                 6                                                                 6
+index_in_label                                                                 0                                                                 1                                                                 2
+sr                                                                         16000                                                             16000                                                             16000
+channels                                                                       1                                                                 1                                                                 1
+duration_s                                                                  10.0                                                              10.0                                                              10.0
+peak                                                                    0.029297                                                          0.031952                                                          0.032043
+rms                                                                     0.009575                                                          0.010974                                                          0.010394
+level_db                                                              -38.794174                                                        -39.547943                                                        -39.067612
+sha256          b58a233edf90f3ac2f16a1baf963301dbde726f1c155bfac3ee259648d7d50ba  bb55cdd07f46f3abe68d67d845988f33dab6494a7fea2618fe51668e4db2d3ef  33db4daa7e65a0b3f0cc67fde0df276e0acfe7eb912910b1b55603bb524ba156
+exclude_reason                                                               NaN                                                               NaN                                                               NaN
+split_ad                                                                     val                                                               val                                                               val
+split_cls                                                                  train                                                             train                                                             train
+
+======================================================================
+SUMMARY
+======================================================================
+  FAIL: 0   WARN: 0
