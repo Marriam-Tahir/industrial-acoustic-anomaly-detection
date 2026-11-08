@@ -6,13 +6,12 @@ For every machine this compares, on validation and test, the ROC-AUC of
   - the selected autoencoder's anomaly score, and
   - two trivial features that need no machine learning: the clip's average level (level_db) and its RMS loudness.
 Trivial features are scored direction-free (max(AUC, 1 - AUC)), which is generous to them.
-If a trivial feature matches the autoencoder on a machine, the autoencoder has not shown it adds anything there, and
-the result must be reported that way. A loudness gap can also come from the recording session rather than the fault,
+If a trivial feature matches the autoencoder on a machine (within 0.02 AUC), the autoencoder has not shown it adds
+anything there, and the result must be reported that way. The check uses the BETTER of the two loudness features. A loudness gap can also come from the recording session rather than the fault,
 and this data cannot tell the two apart. Writes reports/phase3/sanity_level_baseline.csv.
 """
 import sys
 
-import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
@@ -39,16 +38,23 @@ def main() -> int:
             rm = roc_auc_score(h["label"], h["rms"].astype(float))
             nn = h[h["label"] == 0]
             rho = spearmanr(nn["score"], nn["level_db"].astype(float))[0]
-            rows.append({"group": g, "split": split, "auc_autoencoder": ae, "auc_level_db_free": max(lv, 1 - lv),
-                         "auc_rms_free": max(rm, 1 - rm), "level_direction": "abnormal louder" if lv > 0.5 else "abnormal quieter",
+            lvf, rmf = max(lv, 1 - lv), max(rm, 1 - rm)
+            rows.append({"group": g, "split": split, "auc_autoencoder": ae, "auc_level_db_free": lvf,
+                         "auc_rms_free": rmf, "auc_loudness_best": max(lvf, rmf),
+                         "level_direction": "abnormal louder" if lv > 0.5 else "abnormal quieter",
                          "spearman_score_vs_level_on_normal": rho})
     t = pd.DataFrame(rows)
     t.to_csv(rep3 / "sanity_level_baseline.csv", index=False)
     pd.set_option("display.width", 220)
     print(t.round(3).to_string(index=False))
-    flag = t[(t["split"] == "test") & (t["auc_level_db_free"] >= t["auc_autoencoder"] - 0.02)]
-    print("\nMachines where a loudness feature alone is within 0.02 AUC of the autoencoder (test):")
-    print(", ".join(flag["group"]) if len(flag) else "none")
+    close = t["auc_loudness_best"] >= t["auc_autoencoder"] - 0.02
+    for split in ("test", "val"):
+        names = t[(t["split"] == split) & close]["group"]
+        print(f"\nMachines where the better loudness feature is within 0.02 AUC of the autoencoder or above it ({split}):")
+        print(", ".join(names) if len(names) else "none")
+    both = set(t[(t["split"] == "test") & close]["group"]) & set(t[(t["split"] == "val") & close]["group"])
+    print("\nFlagged on BOTH validation and test (the autoencoder is not shown to add anything beyond loudness here):")
+    print(", ".join(sorted(both)) if both else "none")
     print("\nSaved reports/phase3/sanity_level_baseline.csv")
     return 0
 
