@@ -1,0 +1,6 @@
+# Extra packages for the application (Phases 4-5). Install into the smartlistener environment:
+#   pip install -r requirements-app.txt
+fastapi
+uvicorn
+httpx
+python-multipart
