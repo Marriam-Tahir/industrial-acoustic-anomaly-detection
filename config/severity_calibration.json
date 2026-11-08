@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "created_utc": "2026-11-07T19:28:07.003388+00:00",
+  "score_column": "score_mean",
+  "transform": "z = (ln(score) - center) / scale, per machine, fitted on normal VALIDATION clips",
+  "machines": {
+    "fan_id_00": {
+      "model": "dense",
+      "center": -0.7919656973878945,
+      "scale": 0.07775037646682745,
+      "n_val_normal": 183
+    },
+    "fan_id_02": {
+      "model": "dense",
+      "center": -0.2935499213196685,
+      "scale": 0.029080436158761214,
+      "n_val_normal": 159
+    },
+    "fan_id_04": {
+      "model": "dense",
+      "center": -0.43642434305997024,
+      "scale": 0.043431257105082104,
+      "n_val_normal": 154
+    },
+    "fan_id_06": {
+      "model": "dense",
+      "center": -0.623962874064511,
+      "scale": 0.054998114890742106,
+      "n_val_normal": 161
+    },
+    "pump_id_00": {
+      "model": "dense",
+      "center": -0.553800924570402,
+      "scale": 0.09986801062528461,
+      "n_val_normal": 61
+    },
+    "pump_id_02": {
+      "model": "dense",
+      "center": -0.6436369216989946,
+      "scale": 0.0798803899170301,
+      "n_val_normal": 50
+    },
+    "pump_id_04": {
+      "model": "dense",
+      "center": -0.7281987725889457,
+      "scale": 0.12347285874838346,
+      "n_val_normal": 45
+    },
+    "pump_id_06": {
+      "model": "dense",
+      "center": -0.933279879554393,
+      "scale": 0.13981565932057644,
+      "n_val_normal": 46
+    }
+  },
+  "thresholds": {
+    "q_warn": 0.95,
+    "q_alarm": 0.99,
+    "z_warn": 3.5687090543892523,
+    "z_alarm": 7.419001972264017,
+    "n_pooled": 859
+  },
+  "rule": {
+    "n_window": 6,
+    "k_warn": 2,
+    "m_high": 3,
+    "k_high": 2,
+    "recover": 5,
+    "cooldown": 180,
+    "single_alarm_warning": true
+  },
+  "note": "Operational severity. Not a failure probability, remaining life or fault diagnosis.",
+  "updated_utc": "2026-11-07T19:29:32.252760+00:00",
+  "tuning": {
+    "selection": "lowest mean detection delay among rules with no natural-order false HIGH and shuffled false-HIGH rate within the limit",
+    "max_false_per_1000": 1.0,
+    "grid_size": 24,
+    "prefix_windows": 20,
+    "run_windows": 40,
+    "n_shuffles": 200,
+    "seed": 42
+  }
+}
