@@ -255,3 +255,9 @@ Thumbs.db
 # --- Downloaded original ZIPs (kept on the E: drive only) ---
 Dataset/
 data/raw_zips/
+
+data/app/
+*.db
+*.db-wal
+*.db-shm
+.env
