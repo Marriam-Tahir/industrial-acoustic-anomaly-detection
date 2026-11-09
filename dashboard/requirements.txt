@@ -1,0 +1,10 @@
+# Python 3.11+; inference uses the supplied PyTorch state dictionaries on CPU.
+Flask>=3.1,<4
+numpy>=2.1,<3
+scipy>=1.14,<2
+torch>=2.6,<3
+scikit-learn>=1.6,<2
+requests>=2.32,<3
+pandas>=2.2,<4
+streamlit>=1.42,<2
+pytest>=8,<10

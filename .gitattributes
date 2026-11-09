@@ -1,0 +1,5 @@
+# The exported preprocessing configuration hashes the exact Python module bytes.
+dashboard/models/convae_v1/export/*.py text eol=lf
+dashboard/models/convae_v1/export/*.json text eol=lf
+dashboard/models/convae_v1/export/*/model_config.json text eol=lf
+dashboard/models/convae_v1/export/*/model.pt -text

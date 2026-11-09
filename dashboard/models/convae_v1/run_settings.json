@@ -1,0 +1,12 @@
+{
+  "preprocessing_fingerprint": "55fac6205183",
+  "train_mode": "per_snr",
+  "base_channels": 32,
+  "latent_dim": 64,
+  "batch_size": 256,
+  "lr": 0.001,
+  "weight_decay": 0.0,
+  "seed": 42,
+  "score_agg": "auto",
+  "threshold_rule": "max_f1"
+}

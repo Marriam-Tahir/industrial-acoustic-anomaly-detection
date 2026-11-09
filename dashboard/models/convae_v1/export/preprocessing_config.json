@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "fingerprint": "55fac6205183",
+  "preprocessing": {
+    "sample_rate": 16000,
+    "mono_mixdown": "mean_of_channels",
+    "peak_normalize": true,
+    "clip_seconds": 10.0,
+    "window_seconds": 1.0,
+    "hop_seconds": 0.5,
+    "n_windows": 19,
+    "n_fft": 1024,
+    "hop_length": 512,
+    "n_mels": 64,
+    "fmin": 0.0,
+    "fmax": 8000.0,
+    "power": 2.0,
+    "log_eps": 1e-06,
+    "window_scaling": "per_window_min_max_0_1",
+    "stft_window": "hann_periodic",
+    "stft_center": true,
+    "stft_pad_mode": "constant_zeros",
+    "mel_scale": "slaney",
+    "mel_norm": "slaney",
+    "output_dtype": "float32",
+    "output_shape": [
+      19,
+      64,
+      32
+    ],
+    "implementation": "numpy-scipy-v1"
+  },
+  "splits": {
+    "train": [
+      "id_00",
+      "id_02"
+    ],
+    "val": [
+      "id_04"
+    ],
+    "test": [
+      "id_06"
+    ]
+  },
+  "module_sha256": "f3022f4dc89d328d",
+  "created_utc": "2026-11-08T05:42:37+00:00",
+  "machine_types": [
+    "fan",
+    "pump"
+  ],
+  "snrs": [
+    "6_dB",
+    "0_dB",
+    "-6_dB"
+  ],
+  "units_finished": [
+    "-6_dB_fan",
+    "-6_dB_pump",
+    "0_dB_fan",
+    "0_dB_pump",
+    "6_dB_fan",
+    "6_dB_pump"
+  ],
+  "label_rule": "stage-1 training uses split == 'train' and label == 'normal' only",
+  "last_merged_utc": "2026-11-08T09:12:17+00:00"
+}

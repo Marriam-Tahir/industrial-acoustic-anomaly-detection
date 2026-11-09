@@ -261,3 +261,25 @@ data/app/
 *.db-wal
 *.db-shm
 .env
+
+# Minimal runnable dashboard export; training/resume artifacts stay excluded.
+!dashboard/models/
+dashboard/models/**
+!dashboard/models/convae_v1/
+!dashboard/models/convae_v1/README_model.md
+!dashboard/models/convae_v1/requirements.txt
+!dashboard/models/convae_v1/run_info.json
+!dashboard/models/convae_v1/run_settings.json
+!dashboard/models/convae_v1/export/
+!dashboard/models/convae_v1/export/*.py
+!dashboard/models/convae_v1/export/*.json
+!dashboard/models/convae_v1/export/fan_*/
+!dashboard/models/convae_v1/export/pump_*/
+!dashboard/models/convae_v1/export/*/model.pt
+!dashboard/models/convae_v1/export/*/model_config.json
+!dashboard/models/convae_v1/reports/
+!dashboard/models/convae_v1/reports/test_results.csv
+!dashboard/models/convae_v1/reports/data_summary.csv
+!dashboard/.vscode/
+!dashboard/.vscode/settings.json
+!dashboard/.vscode/tasks.json

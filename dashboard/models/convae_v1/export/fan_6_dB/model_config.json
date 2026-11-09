@@ -1,0 +1,23 @@
+{
+  "arch": {
+    "base": 32,
+    "latent": 64
+  },
+  "input_shape": [
+    1,
+    64,
+    32
+  ],
+  "preprocessing_fingerprint": "55fac6205183",
+  "aggregation": "max",
+  "threshold": 0.0018839230750931969,
+  "anomaly_rule": "score > threshold",
+  "experiment": "fan_6_dB",
+  "machine_type": "fan",
+  "snrs": [
+    "6_dB"
+  ],
+  "threshold_rule": "max_f1",
+  "threshold_chosen_on": "validation set",
+  "run_name": "convae_v1"
+}

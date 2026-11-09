@@ -1,0 +1,101 @@
+{
+  "started_utc": "2026-11-09T04:16:16+00:00",
+  "finished_utc": "2026-11-09T07:23:32+00:00",
+  "phase_seconds_this_run": {
+    "PHASE 0: prepare (check Member 1 output, restore data, lock run settings)": 99.0,
+    "PHASE 1: data (Stage-1 rule: train on train+normal only)": 0.7,
+    "PHASE 2: model (convolutional autoencoder)": 0.2,
+    "PHASE 3: training (normal clips of train machines only; resumable)": 7639.1,
+    "PHASE 4: validation - choose aggregation and threshold (validation set only)": 152.3,
+    "PHASE 5: final test evaluation (threshold fixed from validation)": 151.7,
+    "PHASE 6: export bundles for Member 3 (API / Streamlit)": 0.6
+  },
+  "python": "3.13.18",
+  "libraries": {
+    "torch": "2.14.1+cpu",
+    "numpy": "2.4.6",
+    "scipy": "1.16.3",
+    "pandas": "2.2.3",
+    "matplotlib": "3.10.0",
+    "scikit-learn": "1.6.1"
+  },
+  "device": "cpu",
+  "run_settings": {
+    "preprocessing_fingerprint": "55fac6205183",
+    "train_mode": "per_snr",
+    "base_channels": 32,
+    "latent_dim": 64,
+    "batch_size": 256,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "seed": 42,
+    "score_agg": "auto",
+    "threshold_rule": "max_f1"
+  },
+  "epochs_setting": 60,
+  "patience_setting": 8,
+  "training": {
+    "fan_6_dB": {
+      "epochs_run": 60,
+      "best_epoch": 55,
+      "best_val_normal_loss": 0.0022636973299086094,
+      "stopped_by": "reached EPOCHS",
+      "train_windows": 38513,
+      "train_recordings": 2027,
+      "train_seconds_total": 11383.5
+    },
+    "fan_0_dB": {
+      "epochs_run": 60,
+      "best_epoch": 52,
+      "best_val_normal_loss": 0.0022180206142365932,
+      "stopped_by": "early stopping",
+      "train_windows": 38513,
+      "train_recordings": 2027,
+      "train_seconds_total": 11509.3
+    },
+    "fan_-6_dB": {
+      "epochs_run": 60,
+      "best_epoch": 57,
+      "best_val_normal_loss": 0.0021383375860750675,
+      "stopped_by": "reached EPOCHS",
+      "train_windows": 38513,
+      "train_recordings": 2027,
+      "train_seconds_total": 11550.6
+    },
+    "pump_6_dB": {
+      "epochs_run": 43,
+      "best_epoch": 35,
+      "best_val_normal_loss": 0.009095670655369759,
+      "stopped_by": "early stopping",
+      "train_windows": 38209,
+      "train_recordings": 2011,
+      "train_seconds_total": 7761.2
+    },
+    "pump_0_dB": {
+      "epochs_run": 39,
+      "best_epoch": 31,
+      "best_val_normal_loss": 0.004680339712649584,
+      "stopped_by": "early stopping",
+      "train_windows": 38209,
+      "train_recordings": 2011,
+      "train_seconds_total": 4108.9
+    },
+    "pump_-6_dB": {
+      "epochs_run": 40,
+      "best_epoch": 32,
+      "best_val_normal_loss": 0.003088846104219556,
+      "stopped_by": "early stopping",
+      "train_windows": 38209,
+      "train_recordings": 2011,
+      "train_seconds_total": 4067.9
+    }
+  },
+  "experiments": [
+    "fan_6_dB",
+    "fan_0_dB",
+    "fan_-6_dB",
+    "pump_6_dB",
+    "pump_0_dB",
+    "pump_-6_dB"
+  ]
+}
