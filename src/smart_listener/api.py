@@ -6,6 +6,7 @@ acknowledgement, history and alert listings, settings, model profiles and an aud
 Phase 5 adds audio upload and analysis, simulated continuous monitoring and evidence pictures.
 Phases 6 to 7 add the dashboard, e-mail sending, the assistant and reports on top of this.
 """
+import json
 import os
 import re
 import tempfile
@@ -88,6 +89,18 @@ class AckIn(BaseModel):
 class PasswordIn(BaseModel):
     current_password: str = Field(..., max_length=200)
     new_password: str = Field(..., max_length=200)
+
+
+class TestMailIn(BaseModel):
+    recipient: str
+
+    @field_validator("recipient")
+    @classmethod
+    def _ok(cls, v):
+        v = v.strip()
+        if len(v) > 254 or not re.match(EMAIL_RE, v):
+            raise ValueError("recipient must look like name@example.com")
+        return v
 
 
 class NoteIn(BaseModel):
@@ -198,14 +211,18 @@ def _safe_name(name: str) -> str:
 
 # ----------------------------------------------------------------------------- the application
 def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 12, analyzer=None,
-               evidence_dir=None, source_factory=None, max_upload_bytes: int = MAX_UPLOAD_BYTES) -> FastAPI:
+               evidence_dir=None, source_factory=None, max_upload_bytes: int = MAX_UPLOAD_BYTES,
+               mail_config=None, mail_sender=None, mail_interval: float = 30.0, start_mail_worker: bool = False) -> FastAPI:
     """analyzer / source_factory can be passed in (tests do this); otherwise the real models and the dataset replay
     are used. The analyzer is created on first use, so the API starts even when no model file exists yet."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.monitor_stale_fixed = _cleanup_only(app)   # sessions left 'running' by a previous server run
+        if start_mail_worker:
+            app.state.mail.start()
         yield
+        app.state.mail.stop()
         if getattr(app.state, "monitor", None) is not None:
             app.state.monitor.shutdown()
 
@@ -224,6 +241,17 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
     app.state.groups = set(profiles.model_groups(app.state.cfg))
     app.state.session_hours = session_hours
     app.state.failures = {}
+    from smart_listener import notifier
+    app.state.mail_config_error = ""
+    if mail_config is None:
+        try:
+            mail_config = notifier.load_mail_config(project_root())
+        except ValueError as e:     # a broken mail setting must not stop the API; fall back to test mode and say why
+            app.state.mail_config_error = str(e)
+            mail_config = notifier.MailConfig()
+    app.state.mail = notifier.MailWorker(app.state.db_path, mail_config, Path(app.state.db_path).parent / "outbox",
+                                         mail_interval, mail_sender)
+    app.state.mail_worker_started = start_mail_worker
     conn = db.connect(app.state.db_path)
     try:
         db.init_schema(conn)
@@ -361,8 +389,9 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
 
     @app.get("/alerts")
     def alerts(incident_id: Optional[int] = None, machine_id: Optional[int] = None,
+               status: Optional[Literal["pending", "sent", "failed", "suppressed", "dry_run"]] = None,
                limit: int = Query(100, ge=1, le=1000), admin=Depends(current_admin), conn=Depends(get_conn)):
-        return repo.list_alerts(conn, incident_id, machine_id, limit)
+        return repo.list_alerts(conn, incident_id, machine_id, limit, status)
 
     # ---- Phase 5: upload and analysis
     def _active_machine(conn, machine_id: int) -> dict:
@@ -557,9 +586,11 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
     @app.get("/system")
     def system_info(request: Request, admin=Depends(current_admin)):
         a = _analyzer(request.app)
-        out = {"email_sending": "not_connected",
-               "email_note": "Alert e-mails are recorded as PENDING in the database. Sending them by SMTP is not "
-                             "implemented yet.",
+        mode = request.app.state.mail.cfg.mode
+        out = {"email_sending": mode,
+               "email_note": ("Alert e-mails are sent through the configured mail server." if mode == "smtp" else
+                              "No mail server is configured, so alert e-mails are saved as files in data/app/outbox "
+                              "and are NOT sent (test mode)."),
                "analysis_available": a is not None, "analysis_error": request.app.state.analyzer_error,
                "sample_rate": request.app.state.cfg["audio"]["sample_rate"]}
         if a is not None:
@@ -672,5 +703,43 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
             raise HTTPException(404, "machine not found") from None
         repo.audit(conn, admin["username"], "report.machine_pdf", f"id={machine_id}")
         return _download(pdf, "application/pdf", f"machine_{machine_id}.pdf")
+
+    # ---- Phase 7: e-mail delivery
+    from smart_listener import notifier
+
+    @app.get("/mail/status")
+    def mail_status(request: Request, admin=Depends(current_admin), conn=Depends(get_conn)):
+        w = request.app.state.mail
+        return {**w.cfg.public(), "config_error": request.app.state.mail_config_error,
+                "worker_running": request.app.state.mail_worker_started, "interval_s": w.interval,
+                "last_run": w.last, "counts": repo.alert_counts(conn), "outbox": str(w.outbox),
+                "max_attempts": notifier.MAX_ATTEMPTS}
+
+    @app.post("/mail/process")
+    def mail_process(request: Request, admin=Depends(current_admin), conn=Depends(get_conn)):
+        res = request.app.state.mail.run_now()
+        repo.audit(conn, admin["username"], "mail.process", json.dumps(res))
+        return res
+
+    @app.post("/mail/test", status_code=201)
+    def mail_test(body: TestMailIn, request: Request, admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import alerts
+        try:
+            aid = alerts.record_test(conn, body.recipient, admin["username"])
+        except LookupError as e:
+            raise HTTPException(409, str(e)) from None
+        repo.audit(conn, admin["username"], "mail.test", body.recipient)
+        request.app.state.mail.run_now()
+        a = repo.get_alert(conn, aid)
+        return {k: a[k] for k in ("id", "recipient", "status", "attempts", "last_error", "sent_utc")}
+
+    @app.post("/alerts/{alert_id}/retry")
+    def alert_retry(alert_id: int, admin=Depends(current_admin), conn=Depends(get_conn)):
+        if repo.get_alert(conn, alert_id) is None:
+            raise HTTPException(404, "alert not found")
+        if not repo.requeue_alert(conn, alert_id):
+            raise HTTPException(409, "Only a FAILED e-mail can be put back in the queue.")
+        repo.audit(conn, admin["username"], "alert.retry", f"id={alert_id}")
+        return repo.get_alert(conn, alert_id)
 
     return app

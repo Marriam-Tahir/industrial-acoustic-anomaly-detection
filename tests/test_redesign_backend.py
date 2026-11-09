@@ -147,7 +147,7 @@ def test_notes_activity_and_system_info(api_client):
     assert any(a["kind"] == "severity" and a["to_state"] == "HIGH" for a in act)
     assert act == sorted(act, key=lambda a: a["time_utc"], reverse=True)
     sysinfo = api_client.system()
-    assert sysinfo["email_sending"] == "not_connected" and sysinfo["thresholds"]["z_alarm"] > sysinfo["thresholds"]["z_warn"]
+    assert sysinfo["email_sending"] == "test" and sysinfo["thresholds"]["z_alarm"] > sysinfo["thresholds"]["z_warn"]
     assert sysinfo["models"][m["model_group"]]["available"] is True
 
 

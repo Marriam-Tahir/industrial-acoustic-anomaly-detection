@@ -70,8 +70,9 @@ class ApiClient:
     def incidents(self, status=None, machine_id=None, limit=100):
         return self._call("GET", "/incidents", params={k: v for k, v in {"status": status, "machine_id": machine_id, "limit": limit}.items() if v})
     def incident(self, incident_id): return self._call("GET", f"/incidents/{incident_id}")
-    def alerts(self, machine_id=None, limit=100):
-        return self._call("GET", "/alerts", params={k: v for k, v in {"machine_id": machine_id, "limit": limit}.items() if v})
+    def alerts(self, machine_id=None, limit=100, status=None):
+        return self._call("GET", "/alerts", params={k: v for k, v in {"machine_id": machine_id, "limit": limit,
+                                                                       "status": status}.items() if v})
     def settings(self): return self._call("GET", "/settings")
     def audit(self, limit=100): return self._call("GET", "/audit", params={"limit": limit})
     def scenarios(self): return self._call("GET", "/monitoring/scenarios")
@@ -122,3 +123,9 @@ class ApiClient:
         return self._call("GET", f"/reports/machines/{machine_id}.pdf", raw=True,
                           params=self._params(date_from=date_from, date_to=date_to, include_evidence=include_evidence))
     def analysis(self, analysis_id): return self._call("GET", f"/analyses/{analysis_id}")
+
+    # ---- Phase 7: e-mail
+    def mail_status(self): return self._call("GET", "/mail/status")
+    def mail_process(self): return self._call("POST", "/mail/process")
+    def mail_test(self, recipient): return self._call("POST", "/mail/test", json={"recipient": recipient})
+    def retry_alert(self, alert_id): return self._call("POST", f"/alerts/{alert_id}/retry")

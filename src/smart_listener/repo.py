@@ -389,8 +389,12 @@ def add_alert(conn, *, machine_id: int, kind: str, recipient: str, subject: str,
     return cur.lastrowid
 
 
-def list_alerts(conn, incident_id: Optional[int] = None, machine_id: Optional[int] = None, limit: int = 100) -> list:
+def list_alerts(conn, incident_id: Optional[int] = None, machine_id: Optional[int] = None, limit: int = 100,
+                status: Optional[str] = None) -> list:
     where, args = [], []
+    if status:
+        where.append("status = ?")
+        args.append(status)
     if incident_id:
         where.append("incident_id = ?")
         args.append(incident_id)
@@ -399,6 +403,42 @@ def list_alerts(conn, incident_id: Optional[int] = None, machine_id: Optional[in
         args.append(machine_id)
     sql = "SELECT * FROM alerts" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?"
     return _all(conn.execute(sql, (*args, limit)).fetchall())
+
+
+def get_alert(conn, alert_id: int) -> Optional[dict]:
+    return _one(conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone())
+
+
+def due_alerts(conn, now: str, limit: int) -> list:
+    """Pending alerts whose (re)try time has come, oldest first."""
+    return _all(conn.execute("""SELECT * FROM alerts WHERE status = 'pending'
+                                AND (next_attempt_utc IS NULL OR next_attempt_utc <= ?) ORDER BY id LIMIT ?""",
+                             (now, limit)).fetchall())
+
+
+def count_delivered_since(conn, since: str) -> int:
+    """E-mails handed to the mail server (or saved in test mode) since `since`: what the hourly limit counts."""
+    return conn.execute("SELECT COUNT(*) FROM alerts WHERE status IN ('sent', 'dry_run') AND sent_utc >= ?",
+                        (since,)).fetchone()[0]
+
+
+def update_alert_delivery(conn, alert_id: int, *, status: str, attempts: int, last_error: str = "",
+                          sent_utc: Optional[str] = None, next_attempt_utc: Optional[str] = None) -> None:
+    with conn:
+        conn.execute("""UPDATE alerts SET status = ?, attempts = ?, last_error = ?, sent_utc = ?, next_attempt_utc = ?
+                        WHERE id = ?""", (status, attempts, last_error[:500], sent_utc, next_attempt_utc, alert_id))
+
+
+def requeue_alert(conn, alert_id: int) -> bool:
+    """A FAILED alert goes back to the queue with a fresh set of attempts. Returns False if it is not failed."""
+    with conn:
+        cur = conn.execute("""UPDATE alerts SET status = 'pending', attempts = 0, next_attempt_utc = NULL
+                              WHERE id = ? AND status = 'failed'""", (alert_id,))
+    return cur.rowcount == 1
+
+
+def alert_counts(conn) -> dict:
+    return {r[0]: r[1] for r in conn.execute("SELECT status, COUNT(*) FROM alerts GROUP BY status").fetchall()}
 
 
 # ----------------------------------------------------------------------------- settings

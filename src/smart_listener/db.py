@@ -173,9 +173,23 @@ def connect(path=None) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after schema version 1 was released. Adding a nullable column keeps every existing row, so these do not
+# need a new schema version; each is added once, the first time a newer program opens an older database.
+ADDED_COLUMNS = [("alerts", "next_attempt_utc", "TEXT")]   # Phase 7: when a failed e-mail may be tried again
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, column, decl in ADDED_COLUMNS:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in have:
+            with conn:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create every table that does not exist yet. Safe to run again and again; never deletes data."""
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     with conn:
         conn.execute("INSERT OR IGNORE INTO schema_info(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
     row = conn.execute("SELECT value FROM schema_info WHERE key = 'schema_version'").fetchone()

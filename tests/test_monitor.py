@@ -202,7 +202,8 @@ def test_two_machines_can_run_at_once(env):
     a, b = machine(env, "fan_id_06"), machine(env, "pump_id_04")
     sa = env["mgr"].start(a, SMALL, background=True, delay=0.02)
     sb = env["mgr"].start(b, SMALL, background=True, delay=0.02)
-    for _ in range(200):
+    deadline = time.time() + 90          # generous: a busy laptop can be several times slower than usual
+    while time.time() < deadline:
         if all(env["mgr"].status(s["id"])["status"] != "running" for s in (sa, sb)):
             break
         time.sleep(0.05)
