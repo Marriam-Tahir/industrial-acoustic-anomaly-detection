@@ -108,6 +108,15 @@ CREATE TABLE IF NOT EXISTS incidents (
 );
 CREATE INDEX IF NOT EXISTS ix_incidents_machine ON incidents(machine_id, status);
 
+-- operator notes on an incident (added with the dashboard redesign; additive, so schema version 1 still applies)
+CREATE TABLE IF NOT EXISTS incident_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL REFERENCES incidents(id),
+  author TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_utc TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   incident_id INTEGER REFERENCES incidents(id),

@@ -85,6 +85,20 @@ class AckIn(BaseModel):
     note: str = Field("", max_length=500)
 
 
+class PasswordIn(BaseModel):
+    current_password: str = Field(..., max_length=200)
+    new_password: str = Field(..., max_length=200)
+
+
+class NoteIn(BaseModel):
+    note: str = Field(..., min_length=1, max_length=1000)
+
+
+class AskIn(BaseModel):
+    incident_id: int
+    question: str = Field(..., min_length=1, max_length=500)
+
+
 class MonitorStartIn(BaseModel):
     """Options of a SIMULATED monitoring session (replayed dataset recordings)."""
     scenario: Literal["normal", "fault", "fault_recovery"] = "fault"
@@ -156,6 +170,26 @@ def need_analyzer(request: Request):
     if a is None:
         raise HTTPException(503, f"Analysis is not available: {request.app.state.analyzer_error}")
     return a
+
+
+def _save_upload(file, limit: int) -> str:
+    """Copy the uploaded file to a temporary path (the caller deletes it). Refuses files above `limit` bytes."""
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    try:
+        size = 0
+        with os.fdopen(fd, "wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, f"The file is larger than {limit // (1024 * 1024)} MB.")
+                out.write(chunk)
+    except BaseException:
+        os.remove(tmp)
+        raise
+    return tmp
 
 
 def _safe_name(name: str) -> str:
@@ -350,19 +384,8 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
         ok, why = analyzer.available(machine["model_group"])
         if not ok:
             raise HTTPException(409, f"Cannot analyse for {machine['name']}: {why}")
-        limit = request.app.state.max_upload_bytes
-        fd, tmp = tempfile.mkstemp(suffix=".wav")
+        tmp = _save_upload(file, request.app.state.max_upload_bytes)
         try:
-            size = 0
-            with os.fdopen(fd, "wb") as out:
-                while True:
-                    chunk = file.file.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    if size > limit:
-                        raise HTTPException(413, f"The file is larger than {limit // (1024 * 1024)} MB.")
-                    out.write(chunk)
             try:
                 prepared = inference.prepare_upload(tmp, request.app.state.cfg)
             except inference.AudioRejected as e:
@@ -492,5 +515,162 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
     @app.get("/audit")
     def audit_log(limit: int = Query(100, ge=1, le=1000), admin=Depends(current_admin), conn=Depends(get_conn)):
         return repo.list_audit(conn, limit)
+
+    # ---- redesign additions: account, activity, notes, identification, assistant, reports, system info
+    @app.post("/auth/password")
+    def change_password(body: PasswordIn, creds: HTTPAuthorizationCredentials = Depends(bearer),
+                        admin=Depends(current_admin), conn=Depends(get_conn)):
+        try:
+            r = repo.change_password(conn, admin["id"], body.current_password, body.new_password, creds.credentials)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        if r == "wrong_current":
+            raise HTTPException(403, "The current password is wrong.")
+        repo.audit(conn, admin["username"], "password.change")
+        return {"status": "password changed; other sessions were signed out"}
+
+    @app.get("/account")
+    def account(admin=Depends(current_admin), conn=Depends(get_conn)):
+        return repo.get_admin(conn, admin["id"])
+
+    @app.get("/activity")
+    def activity(limit: int = Query(20, ge=1, le=200), admin=Depends(current_admin), conn=Depends(get_conn)):
+        return repo.recent_activity(conn, limit)
+
+    @app.get("/incidents/{incident_id}/notes")
+    def incident_notes(incident_id: int, admin=Depends(current_admin), conn=Depends(get_conn)):
+        if repo.get_incident(conn, incident_id) is None:
+            raise HTTPException(404, "incident not found")
+        return repo.list_incident_notes(conn, incident_id)
+
+    @app.post("/incidents/{incident_id}/notes", status_code=201)
+    def add_incident_note(incident_id: int, body: NoteIn, admin=Depends(current_admin), conn=Depends(get_conn)):
+        note = body.note.strip()
+        if not note:
+            raise HTTPException(422, "the note is empty")
+        nid = repo.add_incident_note(conn, incident_id, admin["username"], note)
+        if nid is None:
+            raise HTTPException(404, "incident not found")
+        repo.audit(conn, admin["username"], "incident.note", f"id={incident_id}")
+        return repo.list_incident_notes(conn, incident_id)
+
+    @app.get("/system")
+    def system_info(request: Request, admin=Depends(current_admin)):
+        a = _analyzer(request.app)
+        out = {"email_sending": "not_connected",
+               "email_note": "Alert e-mails are recorded as PENDING in the database. Sending them by SMTP is not "
+                             "implemented yet.",
+               "analysis_available": a is not None, "analysis_error": request.app.state.analyzer_error,
+               "sample_rate": request.app.state.cfg["audio"]["sample_rate"]}
+        if a is not None:
+            out.update(thresholds=a.thresholds, rule=a.rule,
+                       models={g: {"available": a.available(g)[0], "reason": a.available(g)[1]}
+                               for g in sorted(request.app.state.groups)})
+        return out
+
+    @app.get("/identification/status")
+    def identification_status(request: Request, admin=Depends(current_admin)):
+        from smart_listener import identification
+        return identification.status(project_root(), sorted(request.app.state.groups))
+
+    @app.post("/identify")
+    def identify(request: Request, file: UploadFile = File(...), admin=Depends(current_admin), conn=Depends(get_conn)):
+        """Score an uploaded file with EVERY machine model and suggest the machine only if validation supports it.
+        Nothing is stored. The caller still chooses the machine and then calls analyze-upload."""
+        from smart_listener import identification, inference
+        analyzer = need_analyzer(request)
+        groups = [g for g in sorted(request.app.state.groups) if analyzer.available(g)[0]]
+        tmp = _save_upload(file, request.app.state.max_upload_bytes)
+        try:
+            try:
+                prepared = inference.prepare_upload(tmp, request.app.state.cfg)
+            except inference.AudioRejected as e:
+                raise HTTPException(422, str(e)) from None
+            ranking = identification.rank(analyzer, prepared.windows, groups) if groups else []
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        st = identification.status(project_root(), sorted(request.app.state.groups))
+        sug = identification.suggest(ranking, st, analyzer.thresholds["z_alarm"])
+        registered = {m["model_group"]: m["id"] for m in repo.list_machines(conn)}
+        if sug["group"] and sug["group"] not in registered:
+            sug = {"group": None, "reason": f"The closest model is {sug['group']}, but no active machine is registered "
+                                            f"with that ID."}
+        hint = inference.filename_hint(file.filename or "")
+        return {"file": {"name": _safe_name(file.filename), **prepared.info}, "warnings": prepared.warnings,
+                "ranking": ranking, "status": st, "suggestion": {**sug, "machine_id": registered.get(sug["group"])},
+                "filename_hint": hint}
+
+    @app.get("/assistant/questions")
+    def assistant_questions(admin=Depends(current_admin)):
+        from smart_listener import assistant
+        return {"questions": assistant.SUGGESTED_QUESTIONS}
+
+    @app.post("/assistant/ask")
+    def assistant_ask(body: AskIn, request: Request, admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import assistant, severity
+        a = _analyzer(request.app)
+        thr = a.thresholds if a else None
+        rule = a.rule if a else dict(severity.DEFAULT_RULE)
+        if thr is None:   # no models loaded: use the limits stored with the incident's own analysis
+            inc = repo.get_incident(conn, body.incident_id)
+            op = repo.get_analysis(conn, inc["opened_analysis_id"]) if inc and inc["opened_analysis_id"] else None
+            if op is None:
+                raise HTTPException(503, "The alert limits are not available.")
+            thr = {"z_warn": op["z_warn"], "z_alarm": op["z_alarm"]}
+        try:
+            return assistant.answer(conn, body.incident_id, body.question.strip(), thr, rule)
+        except LookupError:
+            raise HTTPException(404, "incident not found") from None
+
+    def _date(v: Optional[str]) -> Optional[str]:
+        if v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            raise HTTPException(422, "dates must look like 2026-11-09")
+        return v or None
+
+    def _download(data, media, name):
+        return Response(data, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.get("/reports/incidents.csv")
+    def report_incidents_csv(status: Optional[Literal["open", "closed"]] = None, machine_id: Optional[int] = None,
+                             admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import reports
+        repo.audit(conn, admin["username"], "report.incidents_csv")
+        return _download(reports.incidents_csv(repo.list_incidents(conn, status, machine_id, 100000)), "text/csv",
+                         "incidents.csv")
+
+    @app.get("/reports/analyses.csv")
+    def report_analyses_csv(machine_id: Optional[int] = None, date_from: Optional[str] = None,
+                            date_to: Optional[str] = None, admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import reports
+        rows = repo.list_analyses_between(conn, machine_id, _date(date_from), _date(date_to))
+        repo.audit(conn, admin["username"], "report.analyses_csv", f"machine={machine_id} rows={len(rows)}")
+        return _download(reports.analyses_csv(rows), "text/csv", "analyses.csv")
+
+    @app.get("/reports/incidents/{incident_id}.pdf")
+    def report_incident_pdf(incident_id: int, request: Request, include_evidence: bool = True,
+                            admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import reports
+        try:
+            pdf = reports.incident_pdf(conn, incident_id, request.app.state.evidence_dir, include_evidence)
+        except LookupError:
+            raise HTTPException(404, "incident not found") from None
+        repo.audit(conn, admin["username"], "report.incident_pdf", f"id={incident_id}")
+        return _download(pdf, "application/pdf", f"incident_{incident_id:03d}.pdf")
+
+    @app.get("/reports/machines/{machine_id}.pdf")
+    def report_machine_pdf(machine_id: int, request: Request, date_from: Optional[str] = None,
+                           date_to: Optional[str] = None, include_evidence: bool = True,
+                           admin=Depends(current_admin), conn=Depends(get_conn)):
+        from smart_listener import reports
+        try:
+            pdf = reports.machine_pdf(conn, machine_id, _date(date_from), _date(date_to), request.app.state.evidence_dir,
+                                      include_evidence)
+        except LookupError:
+            raise HTTPException(404, "machine not found") from None
+        repo.audit(conn, admin["username"], "report.machine_pdf", f"id={machine_id}")
+        return _download(pdf, "application/pdf", f"machine_{machine_id}.pdf")
 
     return app

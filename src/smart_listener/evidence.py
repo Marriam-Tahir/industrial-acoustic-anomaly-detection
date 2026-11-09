@@ -15,8 +15,8 @@ import numpy as np
 
 from smart_listener import audio
 
-STATE_COLORS = {"NORMAL": "#2a7f62", "WATCH": "#8a8a1f", "WARNING": "#d9822b", "HIGH": "#c0392b"}
-CLIP_COLORS = {"within_normal": "#2a7f62", "above_warning_limit": "#d9822b", "above_alarm_limit": "#c0392b"}
+STATE_COLORS = {"NORMAL": "#3fb27f", "WATCH": "#c9a43a", "WARNING": "#f0a31c", "HIGH": "#e5534b"}
+CLIP_COLORS = {"within_normal": "#3fb27f", "above_warning_limit": "#f0a31c", "above_alarm_limit": "#e5534b"}
 CLIP_TEXT = {"within_normal": "within this machine's normal range",
              "above_warning_limit": "above the warning limit",
              "above_alarm_limit": "above the alarm limit"}
@@ -86,9 +86,13 @@ def summarize(resid: np.ndarray, cfg: dict, top_bands: int = 3) -> dict:
 def describe(summary: dict, result: dict) -> str:
     """One plain-language sentence for the dashboard / report / chatbot."""
     tb = summary["top_bands"][0]
+    if summary.get("peak_time_error_ratio", 1.0) >= 2.0:
+        when = f"strongest around {summary['peak_time_s']} s"
+    else:
+        when = "spread fairly evenly through the clip (a steady difference, not a short event)"
     return (f"This 10-second clip scored z={result['z']:.1f} ({CLIP_TEXT[result['clip_level']]}). "
             f"The model had most trouble with {tb['hz_low']}-{tb['hz_high']} Hz "
-            f"({tb['share_of_error'] * 100:.0f}% of the error) and around {summary['peak_time_s']} s. "
+            f"({tb['share_of_error'] * 100:.0f}% of the error), {when}. "
             f"This shows where the sound differs from normal; it does not identify a fault.")
 
 
@@ -105,9 +109,19 @@ def compute_evidence(analyzer, group: str, y: np.ndarray) -> dict:
 
 
 # ----------------------------------------------------------------------------- pictures
+# Two looks: "dark" (the control-room dashboard, the default) and "light" (for printing, if a report wants it).
+PALETTES = {
+    "dark": {"bg": "#0e151d", "panel": "#111a24", "text": "#e8edf3", "muted": "#8fa0b3", "grid": "#243242",
+             "line": "#6fa8d6", "warn": "#f0a31c", "alarm": "#e5534b", "spec": "viridis", "resid": "inferno"},
+    "light": {"bg": "#ffffff", "panel": "#ffffff", "text": "#1c2733", "muted": "#5d6b7a", "grid": "#d9e0e7",
+              "line": "#2f6a9a", "warn": "#d98a00", "alarm": "#c0392b", "spec": "viridis", "resid": "magma"},
+}
+FONT = ["Segoe UI", "Inter", "Helvetica Neue", "Arial", "DejaVu Sans"]
+
+
 def _fig_to_png(fig) -> bytes:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor=fig.get_facecolor())
     import matplotlib.pyplot as plt
     plt.close(fig)
     return buf.getvalue()
@@ -120,81 +134,118 @@ def _plt():
     return plt
 
 
-def clip_figure(y: np.ndarray, ev: dict, cfg: dict, title: str = "") -> bytes:
+def _style(theme: str) -> dict:
+    p = PALETTES.get(theme, PALETTES["dark"])
+    return {"font.family": "sans-serif", "font.sans-serif": FONT, "font.size": 9, "figure.facecolor": p["bg"],
+            "axes.facecolor": p["panel"], "axes.edgecolor": p["grid"], "axes.labelcolor": p["muted"],
+            "xtick.color": p["muted"], "ytick.color": p["muted"], "text.color": p["text"], "axes.titlecolor": p["muted"],
+            "axes.spines.top": False, "axes.spines.right": False, "grid.color": p["grid"], "grid.linewidth": 0.6}
+
+
+def _panel_title(ax, text: str, p: dict) -> None:
+    ax.set_title(text.upper(), loc="left", fontsize=8, color=p["muted"], fontweight="bold", pad=6)
+
+
+def clip_figure(y: np.ndarray, ev: dict, cfg: dict, title: str = "", theme: str = "dark") -> bytes:
     """Four panels: waveform, log-mel spectrogram, residual heatmap, and the score against the limits."""
     plt = _plt()
+    p = PALETTES.get(theme, PALETTES["dark"])
     sr, f = cfg["audio"]["sample_rate"], cfg["features"]
     spec, resid, res = ev["spec"], ev["resid"], ev["result"]
     t_end = len(y) / sr
     ext = [0, spec.shape[1] * f["hop_length"] / sr, f["fmin"] / 1000, f["fmax"] / 1000]
-    fig = plt.figure(figsize=(9, 8.2))
-    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1.5, 1.5, 0.8], hspace=0.85, top=0.90)
+    with plt.rc_context(_style(theme)):
+        fig = plt.figure(figsize=(10, 8.4))
+        gs = fig.add_gridspec(4, 1, height_ratios=[1, 1.5, 1.5, 0.75], hspace=0.62, top=0.93)
 
-    ax = fig.add_subplot(gs[0])
-    ax.plot(np.arange(len(y)) / sr, y, lw=0.4, color="#35566b")
-    ax.set_xlim(0, t_end)
-    ax.set_ylabel("amplitude")
-    ax.set_title("Waveform", loc="left", fontsize=10)
+        ax = fig.add_subplot(gs[0])
+        ax.plot(np.arange(len(y)) / sr, y, lw=0.4, color=p["line"])
+        ax.set_xlim(0, t_end)
+        ax.set_ylabel("amplitude")
+        ax.grid(axis="y", alpha=0.5)
+        _panel_title(ax, "Waveform", p)
 
-    ax = fig.add_subplot(gs[1])
-    im = ax.imshow(spec, origin="lower", aspect="auto", extent=ext, cmap="viridis")
-    ax.set_ylabel("kHz")
-    ax.set_title("Log-mel spectrogram (dB)", loc="left", fontsize=10)
-    fig.colorbar(im, ax=ax, pad=0.01, fraction=0.03)
+        ax = fig.add_subplot(gs[1])
+        im = ax.imshow(spec, origin="lower", aspect="auto", extent=ext, cmap=p["spec"])
+        ax.set_ylabel("kHz")
+        _panel_title(ax, "Log-mel spectrogram (dB)", p)
+        cb = fig.colorbar(im, ax=ax, pad=0.01, fraction=0.025)
+        cb.outline.set_edgecolor(p["grid"])
 
-    ax = fig.add_subplot(gs[2])
-    im = ax.imshow(resid, origin="lower", aspect="auto", extent=ext, cmap="magma")
-    ax.set_ylabel("kHz")
-    ax.set_title("Where the model could not reproduce the sound (residual heatmap)", loc="left", fontsize=10)
-    fig.colorbar(im, ax=ax, pad=0.01, fraction=0.03)
-    ax.set_xlabel("seconds")
+        ax = fig.add_subplot(gs[2])
+        im = ax.imshow(resid, origin="lower", aspect="auto", extent=ext, cmap=p["resid"])
+        ax.set_ylabel("kHz")
+        ax.set_xlabel("seconds")
+        _panel_title(ax, "Residual heatmap - where the sound differs most from normal", p)
+        cb = fig.colorbar(im, ax=ax, pad=0.01, fraction=0.025)
+        cb.outline.set_edgecolor(p["grid"])
 
-    ax = fig.add_subplot(gs[3])
-    top = min(max(res.z, res.z_alarm) + 1.5, res.z_alarm * 3)      # far-off values are drawn at the edge with an arrow
-    off_scale = res.z > top
-    ax.axvspan(-3, res.z_warn, color="#2a7f62", alpha=0.10)
-    ax.axvspan(res.z_warn, res.z_alarm, color="#d9822b", alpha=0.12)
-    ax.axvspan(res.z_alarm, top, color="#c0392b", alpha=0.12)
-    ax.axvline(res.z_warn, color="#d9822b", ls="--", lw=1.2)
-    ax.axvline(res.z_alarm, color="#c0392b", ls="--", lw=1.2)
-    ax.plot([min(res.z, top * 0.96)], [0.5], ">" if off_scale else "o", ms=11, color=CLIP_COLORS[res.clip_level], mec="black")
-    ax.set_xlim(min(-3, res.z - 1), top)
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])
-    ax.set_xlabel(f"anomaly level z = {res.z:.1f}{' (off the scale)' if off_scale else ''}   (warning limit {res.z_warn:.1f}, alarm limit {res.z_alarm:.1f})")
-    ax.set_title(f"This clip: {CLIP_TEXT[res.clip_level]}", loc="left", fontsize=10)
-    if title:
-        fig.suptitle(title, fontsize=12, x=0.01, ha="left", y=0.985)
-    return _fig_to_png(fig)
+        ax = fig.add_subplot(gs[3])
+        top = min(max(res.z, res.z_alarm) + 1.5, res.z_alarm * 3)      # far-off values are drawn at the edge with an arrow
+        off_scale = res.z > top
+        lo = min(-3, res.z - 1)
+        ax.axvspan(lo, res.z_warn, color=CLIP_COLORS["within_normal"], alpha=0.16, lw=0)
+        ax.axvspan(res.z_warn, res.z_alarm, color=CLIP_COLORS["above_warning_limit"], alpha=0.18, lw=0)
+        ax.axvspan(res.z_alarm, top, color=CLIP_COLORS["above_alarm_limit"], alpha=0.18, lw=0)
+        ax.axvline(res.z_warn, color=p["warn"], ls="--", lw=1.2)
+        ax.axvline(res.z_alarm, color=p["alarm"], ls="--", lw=1.2)
+        ax.plot([min(res.z, top * 0.96)], [0.5], ">" if off_scale else "o", ms=10, color=CLIP_COLORS[res.clip_level],
+                mec=p["text"], mew=1.0)
+        ax.set_xlim(lo, top)
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])
+        ax.spines["left"].set_visible(False)
+        ax.set_xlabel(f"anomaly level z = {res.z:.1f}{' (off the scale)' if off_scale else ''}      "
+                      f"warning limit {res.z_warn:.1f}   |   alarm limit {res.z_alarm:.1f}")
+        _panel_title(ax, f"This clip: {CLIP_TEXT[res.clip_level]}", p)
+        if title:
+            fig.suptitle(title, fontsize=11, x=0.01, ha="left", y=0.985, color=p["text"], fontweight="bold")
+        return _fig_to_png(fig)
 
 
-def history_figure(rows: list, z_warn: float, z_alarm: float, title: str = "") -> bytes:
-    """z over time with the two limits and the severity state as a coloured band underneath.
-    `rows` are analyses (dicts with window_utc, z, state), oldest first."""
+def history_figure(rows: list, z_warn: float, z_alarm: float, title: str = "", theme: str = "dark") -> bytes:
+    """z over time with the two limits, a dot per window coloured by the severity state, and the state as a band.
+    `rows` are analyses (dicts with window_utc, z, state), oldest first. Very large z values are compressed
+    (log scale above a few times the alarm limit) so the limits stay readable."""
     plt = _plt()
     from datetime import datetime
-    fig, (ax, bar) = plt.subplots(2, 1, figsize=(9, 4.2), sharex=True, gridspec_kw={"height_ratios": [5, 0.6], "hspace": 0.08})
-    if not rows:
-        ax.text(0.5, 0.5, "no analysed windows yet", ha="center", va="center", transform=ax.transAxes)
+    p = PALETTES.get(theme, PALETTES["dark"])
+    with plt.rc_context(_style(theme)):
+        fig, (ax, bar) = plt.subplots(2, 1, figsize=(10, 4.6), sharex=True,
+                                      gridspec_kw={"height_ratios": [6, 0.5], "hspace": 0.06})
+        if not rows:
+            ax.text(0.5, 0.5, "No analysed windows yet", ha="center", va="center", transform=ax.transAxes, color=p["muted"])
+            ax.set_xticks([])
+            ax.set_yticks([])
+            bar.axis("off")
+            return _fig_to_png(fig)
+        t = [datetime.fromisoformat(r["window_utc"]) for r in rows]
+        z = [r["z"] for r in rows]
+        compress = max(z) > 4 * z_alarm and z_alarm > 0
+        if compress:
+            ax.set_yscale("symlog", linthresh=max(z_alarm * 1.5, 1.0))
+        ax.plot(t, z, lw=1.2, color=p["line"], zorder=2)
+        ax.scatter(t, z, s=16, c=[STATE_COLORS.get(r.get("state") or "NORMAL", "#6b7785") for r in rows], zorder=3, lw=0)
+        ax.axhline(z_warn, color=p["warn"], ls="--", lw=1.1, zorder=1)
+        ax.axhline(z_alarm, color=p["alarm"], ls="--", lw=1.1, zorder=1)
+        for zv, name, col in ((z_warn, "warning", p["warn"]), (z_alarm, "alarm", p["alarm"])):
+            ax.text(0.995, zv, f"{name} {zv:.1f}", color=col, va="bottom", ha="right", fontsize=8,
+                    transform=ax.get_yaxis_transform(), zorder=4)
+        ax.set_ylabel("anomaly level z" + (" (compressed above limits)" if compress else ""))
+        ax.grid(alpha=0.6)
+        for i in range(len(rows)):
+            t1 = t[i + 1] if i + 1 < len(t) else t[i]
+            if i + 1 == len(t) and len(t) > 1:
+                t1 = t[i] + (t[i] - t[i - 1])
+            bar.axvspan(t[i], t1, color=STATE_COLORS.get(rows[i].get("state") or "NORMAL", "#6b7785"), lw=0)
+        bar.set_yticks([])
+        for sp in ("left", "bottom"):
+            bar.spines[sp].set_visible(False)
+        bar.set_xlabel("time (UTC; simulated clock for simulated monitoring)")
+        present = [s for s in STATE_COLORS if any((r.get("state") or "NORMAL") == s for r in rows)]
+        ax.legend([plt.Line2D([0], [0], marker="o", ls="", color=STATE_COLORS[s]) for s in present], present,
+                  loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=len(present), fontsize=8, frameon=False, labelcolor=p["muted"])
+        fig.autofmt_xdate()
+        if title:
+            ax.set_title(title, loc="left", fontsize=10, color=p["text"], fontweight="bold")
         return _fig_to_png(fig)
-    t = [datetime.fromisoformat(r["window_utc"]) for r in rows]
-    z = [r["z"] for r in rows]
-    ax.plot(t, z, lw=1.1, color="#35566b")
-    ax.axhline(z_warn, color="#d9822b", ls="--", lw=1.2, label=f"warning limit ({z_warn:.1f})")
-    ax.axhline(z_alarm, color="#c0392b", ls="--", lw=1.2, label=f"alarm limit ({z_alarm:.1f})")
-    ax.set_ylabel("anomaly level z")
-    ax.legend(loc="upper left", fontsize=8, frameon=False)
-    ax.grid(alpha=0.25)
-    for i, r in enumerate(rows):
-        t1 = t[i + 1] if i + 1 < len(t) else t[i]
-        if i + 1 == len(t) and len(t) > 1:
-            t1 = t[i] + (t[i] - t[i - 1])
-        bar.axvspan(t[i], t1, color=STATE_COLORS.get(r.get("state") or "NORMAL", "#999999"), lw=0)
-    bar.set_yticks([])
-    bar.set_xlabel("time (simulated clock for simulated monitoring)")
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in STATE_COLORS.values()]
-    bar.legend(handles, list(STATE_COLORS), loc="center left", bbox_to_anchor=(1.01, 0.5), ncol=1, fontsize=8, frameon=False)
-    fig.autofmt_xdate()
-    if title:
-        ax.set_title(title, loc="left", fontsize=11)
-    return _fig_to_png(fig)
