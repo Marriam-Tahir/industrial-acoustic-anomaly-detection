@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "created_utc": "2026-11-09T16:58:38+00:00",
+  "groups": [
+    "fan_id_00",
+    "fan_id_02",
+    "fan_id_04",
+    "fan_id_06",
+    "pump_id_00",
+    "pump_id_02",
+    "pump_id_04",
+    "pump_id_06"
+  ],
+  "rule": "lowest calibrated anomaly level across all machine models; answered only when that level is within the alarm limit and the next machine is at least the validated margin higher",
+  "z_alarm": 7.419001972264017,
+  "min_accuracy": 0.98,
+  "margins_on_validation": [
+    {
+      "margin": 0,
+      "val": {
+        "n": 1718,
+        "answered": 1652,
+        "answered_rate": 0.9615832363213038,
+        "correct": 892,
+        "wrong": 760,
+        "accuracy_answered": 0.5399515738498789,
+        "answered_rate_normal": 0.9988358556461001,
+        "accuracy_answered_normal": 0.8100233100233101,
+        "answered_rate_abnormal": 0.9243306169965075,
+        "accuracy_answered_abnormal": 0.24811083123425692
+      }
+    },
+    {
+      "margin": 1,
+      "val": {
+        "n": 1718,
+        "answered": 1150,
+        "answered_rate": 0.6693830034924331,
+        "correct": 675,
+        "wrong": 475,
+        "accuracy_answered": 0.5869565217391305,
+        "answered_rate_normal": 0.6717112922002328,
+        "accuracy_answered_normal": 0.8908145580589255,
+        "answered_rate_abnormal": 0.6670547147846333,
+        "accuracy_answered_abnormal": 0.28097731239092494
+      }
+    },
+    {
+      "margin": 2,
+      "val": {
+        "n": 1718,
+        "answered": 752,
+        "answered_rate": 0.43771827706635624,
+        "correct": 536,
+        "wrong": 216,
+        "accuracy_answered": 0.7127659574468085,
+        "answered_rate_normal": 0.5005820721769499,
+        "accuracy_answered_normal": 0.9720930232558139,
+        "answered_rate_abnormal": 0.37485448195576254,
+        "accuracy_answered_abnormal": 0.36645962732919257
+      }
+    },
+    {
+      "margin": 3,
+      "val": {
+        "n": 1718,
+        "answered": 492,
+        "answered_rate": 0.28637951105937137,
+        "correct": 418,
+        "wrong": 74,
+        "accuracy_answered": 0.8495934959349594,
+        "answered_rate_normal": 0.39231664726426074,
+        "accuracy_answered_normal": 1.0,
+        "answered_rate_abnormal": 0.18044237485448195,
+        "accuracy_answered_abnormal": 0.5225806451612903
+      }
+    },
+    {
+      "margin": 5,
+      "val": {
+        "n": 1718,
+        "answered": 230,
+        "answered_rate": 0.13387660069848661,
+        "correct": 227,
+        "wrong": 3,
+        "accuracy_answered": 0.9869565217391304,
+        "answered_rate_normal": 0.25844004656577413,
+        "accuracy_answered_normal": 1.0,
+        "answered_rate_abnormal": 0.009313154831199068,
+        "accuracy_answered_abnormal": 0.625
+      }
+    },
+    {
+      "margin": 7.5,
+      "val": {
+        "n": 1718,
+        "answered": 68,
+        "answered_rate": 0.03958090803259604,
+        "correct": 67,
+        "wrong": 1,
+        "accuracy_answered": 0.9852941176470589,
+        "answered_rate_normal": 0.07566938300349244,
+        "accuracy_answered_normal": 1.0,
+        "answered_rate_abnormal": 0.0034924330616996507,
+        "accuracy_answered_abnormal": 0.6666666666666666
+      }
+    },
+    {
+      "margin": 10,
+      "val": {
+        "n": 1718,
+        "answered": 26,
+        "answered_rate": 0.015133876600698487,
+        "correct": 26,
+        "wrong": 0,
+        "accuracy_answered": 1.0,
+        "answered_rate_normal": 0.030267753201396973,
+        "accuracy_answered_normal": 1.0,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    },
+    {
+      "margin": 15,
+      "val": {
+        "n": 1718,
+        "answered": 0,
+        "answered_rate": 0.0,
+        "correct": 0,
+        "wrong": 0,
+        "accuracy_answered": null,
+        "answered_rate_normal": 0.0,
+        "accuracy_answered_normal": null,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    },
+    {
+      "margin": 20,
+      "val": {
+        "n": 1718,
+        "answered": 0,
+        "answered_rate": 0.0,
+        "correct": 0,
+        "wrong": 0,
+        "accuracy_answered": null,
+        "answered_rate_normal": 0.0,
+        "accuracy_answered_normal": null,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    },
+    {
+      "margin": 30,
+      "val": {
+        "n": 1718,
+        "answered": 0,
+        "answered_rate": 0.0,
+        "correct": 0,
+        "wrong": 0,
+        "accuracy_answered": null,
+        "answered_rate_normal": 0.0,
+        "accuracy_answered_normal": null,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    },
+    {
+      "margin": 50,
+      "val": {
+        "n": 1718,
+        "answered": 0,
+        "answered_rate": 0.0,
+        "correct": 0,
+        "wrong": 0,
+        "accuracy_answered": null,
+        "answered_rate_normal": 0.0,
+        "accuracy_answered_normal": null,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    },
+    {
+      "margin": 100,
+      "val": {
+        "n": 1718,
+        "answered": 0,
+        "answered_rate": 0.0,
+        "correct": 0,
+        "wrong": 0,
+        "accuracy_answered": null,
+        "answered_rate_normal": 0.0,
+        "accuracy_answered_normal": null,
+        "answered_rate_abnormal": 0.0,
+        "accuracy_answered_abnormal": null
+      }
+    }
+  ],
+  "chosen_margin": null,
+  "test": null,
+  "unregistered_wrong_answer_rate": null,
+  "enabled": false,
+  "reason": "No margin reached 98% correct on validation clips."
+}

@@ -1,0 +1,88 @@
+IDENTIFICATION INVESTIGATION - 3442 clips (val+test, normal and abnormal), 8 models
+calibrated limits: warning z>3.57, alarm z>7.42
+
+1. Top-1 accuracy of each rule (random guessing = 12.5%)
+rule                                                           all  normal abnormal type only
+A  lowest calibrated z                                       54.0%   81.4%    26.6%     59.0%
+B  lowest RAW score (not comparable across models)           48.0%   62.1%    33.9%     52.2%
+C  nearest mean-spectrum centroid (no model needed)          80.4%   97.3%    63.6%     88.9%
+
+2. Rule A per machine (rows: true machine; columns: how often each model won)
+col_0       fan_id_00  fan_id_02  fan_id_04  fan_id_06  pump_id_00  pump_id_02  pump_id_04  pump_id_06
+row_0                                                                                                 
+fan_id_00         527          0          0          0         106           0           0         101
+fan_id_02           0        210          0          0         416           0           0          12
+fan_id_04           0          0        155          0         362           0           0          99
+fan_id_06           0          0          0        326         156           0           0         160
+pump_id_00          0          0          0          0         245           0           0           1
+pump_id_02          0          0          0          0          50         152           0           0
+pump_id_04          0          0          0          0          85           0          90           5
+pump_id_06          0          0          0          0          31           0           0         153
+
+   accuracy by machine and label:
+            acc_normal  acc_abnormal
+fan_id_00         87.2          56.4
+fan_id_02         65.8           0.0
+fan_id_04         50.3           0.0
+fan_id_06         98.4           3.1
+pump_id_00       100.0          99.2
+pump_id_02        94.1          56.4
+pump_id_04       100.0           0.0
+pump_id_06       100.0          66.3
+
+3. Is the right model's z lower than the best WRONG model's z? (this is what Rule A needs)
+   own-model z:        median      1.6   95th pct     31.6
+   best wrong-model z: median      2.3   5th pct      -0.8
+   normal   : own z median     -0.1; best wrong z median      2.2; own z < best wrong z in  81.4%
+   abnormal : own z median      7.0; best wrong z median      2.3; own z < best wrong z in  26.6%
+
+4. Wrong-model leakage: how often does ANOTHER machine's model call the clip 'within normal range' (z <= warning limit)?
+   rows: true machine, columns: wrong model, value: % of clips that look NORMAL to that wrong model
+            fan_id_00  fan_id_02  fan_id_04  fan_id_06  pump_id_00  pump_id_02  pump_id_04  pump_id_06
+fan_id_00           -        0.0        0.0        0.0        53.7         0.0         0.0        56.1
+fan_id_02         0.0          -        0.0        0.0        98.1         0.0         0.0        82.8
+fan_id_04         0.5        0.0          -        0.0        83.8         0.0         0.0        89.3
+fan_id_06         8.1        0.0        0.0          -        29.0         0.0         0.0        27.9
+pump_id_00        0.0        0.0        0.0        0.0           -         0.0         0.0        17.1
+pump_id_02        0.0        0.0        0.0        0.0        41.1           -         0.0         0.0
+pump_id_04        0.0        0.0        0.0        0.0        18.9         0.0           -         2.8
+pump_id_06        1.1        0.0        0.0        0.0        25.0         0.0         0.0           -
+
+   most 'accepting' wrong models: pump_id_00 (98.1%), pump_id_06 (89.3%), fan_id_00 (8.1%)
+
+5. Accept only confident answers (Rule A). Two acceptance tests are compared:
+   'margin only'   : best-vs-second z gap >= M   (also accepts clips that are abnormal for their own machine)
+   'margin+normal' : margin >= M AND best z <= alarm limit   (refuses clips that look abnormal even to the best model)
+     M |  answered  correct  wrong |  answered  correct  wrong
+     0 |    100.0%    54.0%   1584 |     95.5%    54.9%   1481
+     2 |     44.7%    69.8%    465 |     43.7%    70.0%    452
+     5 |     13.4%    98.5%      7 |     13.3%    98.9%      5
+    10 |      1.0%   100.0%      0 |      1.0%   100.0%      0
+    20 |      0.0%      n/a      0 |      0.0%      n/a      0
+    50 |      0.0%      n/a      0 |      0.0%      n/a      0
+   100 |      0.0%      n/a      0 |      0.0%      n/a      0
+
+6. Unregistered-machine test: remove the true machine's model; would the system wrongly accept the clip?
+true machine (model removed)    accepted as normal (z<=warn)   accepted (z<=alarm)
+fan_id_00                                              69.2%                 96.2%
+fan_id_02                                              98.4%                100.0%
+fan_id_04                                              93.3%                100.0%
+fan_id_06                                              32.7%                 81.3%
+pump_id_00                                             17.1%                 82.1%
+pump_id_02                                             41.1%                 95.0%
+pump_id_04                                             18.9%                 72.2%
+pump_id_06                                             25.5%                 59.8%
+
+7. Own-model sanity: share of each machine's NORMAL clips that its own model calls normal, and abnormal clips above the alarm limit
+   fan_id_00: normal within limit  95.9%; abnormal above alarm   5.2%
+   fan_id_02: normal within limit  95.3%; abnormal above alarm  67.7%
+   fan_id_04: normal within limit  91.9%; abnormal above alarm  35.1%
+   fan_id_06: normal within limit  92.5%; abnormal above alarm 100.0%
+   pump_id_00: normal within limit 100.0%; abnormal above alarm  11.4%
+   pump_id_02: normal within limit  99.0%; abnormal above alarm  24.8%
+   pump_id_04: normal within limit 100.0%; abnormal above alarm  91.1%
+   pump_id_06: normal within limit  98.9%; abnormal above alarm  31.5%
+
+8. Validation used by the application (margin chosen on VALIDATION clips, measured once on TEST clips)
+   no margin reached 98% on validation clips -> suggestions stay OFF
+   application suggestions: OFF No margin reached 98% correct on validation clips.

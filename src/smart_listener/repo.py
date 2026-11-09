@@ -54,6 +54,25 @@ def authenticate(conn, username: str, password: str) -> Optional[dict]:
     return {"id": row["id"], "username": row["username"]}
 
 
+def get_admin(conn, admin_id: int) -> Optional[dict]:
+    return _one(conn.execute("SELECT id, username, active, created_utc, last_login_utc FROM admins WHERE id = ?",
+                             (admin_id,)).fetchone())
+
+
+def change_password(conn, admin_id: int, current: str, new: str, keep_token: Optional[str] = None) -> str:
+    """Returns 'ok' or 'wrong_current'. Raises ValueError (plain English) if the new password is too weak.
+    All other sessions of this admin are ended, so a leaked old session cannot be used any more."""
+    row = conn.execute("SELECT * FROM admins WHERE id = ?", (admin_id,)).fetchone()
+    if row is None or not security.verify_password(current, row["password_hash"]):
+        return "wrong_current"
+    security.check_password_strength(new, row["username"])
+    with conn:
+        conn.execute("UPDATE admins SET password_hash = ? WHERE id = ?", (security.hash_password(new), admin_id))
+        conn.execute("DELETE FROM sessions WHERE admin_id = ? AND token_hash != ?",
+                     (admin_id, security.hash_token(keep_token) if keep_token else ""))
+    return "ok"
+
+
 def create_session(conn, admin_id: int, hours: float = 12) -> str:
     token = security.new_token()
     start = datetime.now(timezone.utc)
@@ -137,7 +156,7 @@ def fleet(conn, include_inactive: bool = False) -> list:
                     (SELECT COUNT(*) FROM incidents WHERE machine_id = m.id) AS n_incidents
              FROM machines m
              LEFT JOIN analyses a ON a.id = (SELECT id FROM analyses WHERE machine_id = m.id AND state IS NOT NULL
-                                             ORDER BY window_utc DESC, id DESC LIMIT 1)"""
+                                             ORDER BY id DESC LIMIT 1)"""
     if not include_inactive:
         sql += " WHERE m.active = 1"
     out = _all(conn.execute(sql + " ORDER BY m.name").fetchall())
@@ -160,12 +179,24 @@ def add_analysis(conn, *, machine_id: int, source: str, window_utc: str, model_k
     return cur.lastrowid
 
 
-def list_analyses(conn, machine_id: int, limit: int = 100, offset: int = 0, source: Optional[str] = None) -> list:
+def list_analyses(conn, machine_id: int, limit: int = 100, offset: int = 0, source: Optional[str] = None,
+                  session_id: Optional[int] = None) -> list:
     sql, args = "SELECT * FROM analyses WHERE machine_id = ?", [machine_id]
     if source:
         sql, args = sql + " AND source = ?", args + [source]
+    if session_id:
+        sql, args = sql + " AND session_id = ?", args + [session_id]
     sql += " ORDER BY window_utc DESC, id DESC LIMIT ? OFFSET ?"
     return _all(conn.execute(sql, (*args, limit, offset)).fetchall())
+
+
+def get_analysis(conn, analysis_id: int) -> Optional[dict]:
+    return _one(conn.execute("SELECT * FROM analyses WHERE id = ?", (analysis_id,)).fetchone())
+
+
+def set_analysis_evidence(conn, analysis_id: int, evidence: dict) -> None:
+    with conn:
+        conn.execute("UPDATE analyses SET evidence_json = ? WHERE id = ?", (json.dumps(evidence), analysis_id))
 
 
 def add_severity_event(conn, *, machine_id: int, from_state: str, to_state: str, event_utc: str,
@@ -181,6 +212,22 @@ def list_severity_events(conn, machine_id: int, limit: int = 100) -> list:
                              (machine_id, limit)).fetchall())
 
 
+def recent_activity(conn, limit: int = 20) -> list:
+    """Latest severity changes and incident openings across the whole fleet, newest first."""
+    sql = """SELECT * FROM (
+               SELECT e.event_utc AS time_utc, 'severity' AS kind, e.machine_id, m.name AS machine_name,
+                      m.model_group, e.from_state, e.to_state, NULL AS incident_id, a.source AS source
+               FROM severity_events e JOIN machines m ON m.id = e.machine_id
+               LEFT JOIN analyses a ON a.id = e.analysis_id
+               UNION ALL
+               SELECT i.opened_utc, 'incident_opened', i.machine_id, m.name, m.model_group, NULL, 'HIGH', i.id,
+                      a.source
+               FROM incidents i JOIN machines m ON m.id = i.machine_id
+               LEFT JOIN analyses a ON a.id = i.opened_analysis_id)
+             ORDER BY time_utc DESC LIMIT ?"""
+    return _all(conn.execute(sql, (limit,)).fetchall())
+
+
 # ----------------------------------------------------------------------------- incidents
 _INCIDENT_SELECT = """SELECT i.*, m.name AS machine_name, m.machine_type, m.model_group, m.owner_name, m.owner_email
                       FROM incidents i JOIN machines m ON m.id = i.machine_id"""
@@ -193,6 +240,26 @@ def open_incident(conn, *, machine_id: int, opened_utc: str, analysis_id: Option
                                                     n_windows, summary_json) VALUES (?, ?, ?, ?, ?, 1, ?)""",
                            (machine_id, opened_utc, analysis_id, z, score, json.dumps(summary or {})))
     return cur.lastrowid
+
+
+def reopen_incident(conn, incident_id: int) -> bool:
+    """HIGH came back within the cool-down time: the same incident continues (no new incident, no new alert)."""
+    with conn:
+        cur = conn.execute("""UPDATE incidents SET status = 'open', closed_utc = NULL, n_reopened = n_reopened + 1
+                              WHERE id = ? AND status = 'closed'""", (incident_id,))
+    return cur.rowcount > 0
+
+
+def update_incident_progress(conn, incident_id: int, z: float, score: float) -> None:
+    """One more HIGH window inside the incident: count it and keep the peak."""
+    with conn:
+        conn.execute("""UPDATE incidents SET n_windows = n_windows + 1,
+                              peak_score = CASE WHEN ? > peak_z THEN ? ELSE peak_score END,
+                              peak_z = MAX(peak_z, ?) WHERE id = ?""", (z, score, z, incident_id))
+
+
+def latest_incident(conn, machine_id: int) -> Optional[dict]:
+    return _one(conn.execute("SELECT * FROM incidents WHERE machine_id = ? ORDER BY id DESC LIMIT 1", (machine_id,)).fetchone())
 
 
 def get_incident(conn, incident_id: int) -> Optional[dict]:
@@ -224,11 +291,87 @@ def acknowledge_incident(conn, incident_id: int, by: str, note: str = "") -> str
     return "ok"
 
 
+def add_incident_note(conn, incident_id: int, author: str, note: str) -> Optional[int]:
+    if conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+        return None
+    with conn:
+        cur = conn.execute("INSERT INTO incident_notes(incident_id, author, note, created_utc) VALUES (?, ?, ?, ?)",
+                           (incident_id, author, note, now_utc()))
+    return cur.lastrowid
+
+
+def list_incident_notes(conn, incident_id: int) -> list:
+    return _all(conn.execute("SELECT * FROM incident_notes WHERE incident_id = ? ORDER BY id", (incident_id,)).fetchall())
+
+
+def list_analyses_between(conn, machine_id: Optional[int], date_from: Optional[str], date_to: Optional[str],
+                          source: Optional[str] = None, limit: int = 100000) -> list:
+    """Analysed windows (oldest first) for reports. Dates are 'YYYY-MM-DD' (UTC), both ends included."""
+    where, args = [], []
+    if machine_id:
+        where.append("a.machine_id = ?"); args.append(machine_id)
+    if date_from:
+        where.append("a.window_utc >= ?"); args.append(date_from)
+    if date_to:
+        where.append("a.window_utc < date(?, '+1 day')"); args.append(date_to)
+    if source:
+        where.append("a.source = ?"); args.append(source)
+    sql = ("SELECT a.*, m.name AS machine_name, m.model_group FROM analyses a JOIN machines m ON m.id = a.machine_id"
+           + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY a.window_utc, a.id LIMIT ?")
+    return _all(conn.execute(sql, (*args, limit)).fetchall())
+
+
 def close_incident(conn, incident_id: int, closed_utc: str) -> bool:
     with conn:
         cur = conn.execute("UPDATE incidents SET status = 'closed', closed_utc = ? WHERE id = ? AND status = 'open'",
                            (closed_utc, incident_id))
     return cur.rowcount > 0
+
+
+# ----------------------------------------------------------------------------- monitoring sessions
+def create_session_row(conn, machine_id: int, source: str, note: str = "") -> int:
+    with conn:
+        cur = conn.execute("INSERT INTO monitoring_sessions(machine_id, source, status, started_utc, note) "
+                           "VALUES (?, ?, 'running', ?, ?)", (machine_id, source, now_utc(), note[:500]))
+    return cur.lastrowid
+
+
+def finish_session_row(conn, session_id: int, status: str, note: str = "") -> None:
+    with conn:
+        conn.execute("UPDATE monitoring_sessions SET status = ?, ended_utc = ?, "
+                     "note = CASE WHEN ? = '' THEN note ELSE ? END WHERE id = ? AND status = 'running'",
+                     (status, now_utc(), note[:500], note[:500], session_id))
+
+
+def get_session_row(conn, session_id: int) -> Optional[dict]:
+    return _one(conn.execute("SELECT * FROM monitoring_sessions WHERE id = ?", (session_id,)).fetchone())
+
+
+def list_session_rows(conn, machine_id: Optional[int] = None, status: Optional[str] = None, limit: int = 50) -> list:
+    where, args = [], []
+    if machine_id:
+        where.append("machine_id = ?")
+        args.append(machine_id)
+    if status:
+        where.append("status = ?")
+        args.append(status)
+    sql = "SELECT * FROM monitoring_sessions" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?"
+    return _all(conn.execute(sql, (*args, limit)).fetchall())
+
+
+def fail_stale_sessions(conn) -> int:
+    """Sessions still marked 'running' when the server starts belong to a previous server run (their threads are gone).
+    Mark them as errors and close their open incidents. Returns how many were fixed."""
+    rows = _all(conn.execute("SELECT id, machine_id FROM monitoring_sessions WHERE status = 'running'").fetchall())
+    for r in rows:
+        finish_session_row(conn, r["id"], "error", "the server was restarted while this session was running")
+    if rows:
+        ids = [r["machine_id"] for r in rows]
+        marks = ",".join("?" * len(ids))
+        with conn:
+            conn.execute(f"UPDATE incidents SET status = 'closed', closed_utc = ? WHERE status = 'open' "
+                         f"AND machine_id IN ({marks})", (now_utc(), *ids))
+    return len(rows)
 
 
 # ----------------------------------------------------------------------------- alerts (e-mail records)
