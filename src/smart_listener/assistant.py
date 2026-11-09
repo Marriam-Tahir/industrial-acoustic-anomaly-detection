@@ -12,7 +12,7 @@ predict when a machine will fail, or give a probability of failure, and the assi
 import json
 import re
 
-from smart_listener.dashboard_ui import fmt_time, inc_code, machine_code
+from smart_listener.dashboard_ui import ALERT_KIND, alert_text, fmt_time, inc_code, machine_code
 
 NOT_DETERMINED = "not determined"
 
@@ -155,10 +155,8 @@ def answer_from_context(c: dict, question: str) -> dict:
         secs = [_sec("record", "Timeline", f"{code} opened at {fmt_time(i['opened_utc'])} (UTC). {end}{re_}{ack}")]
     elif kind == "notified":
         if c["alerts"]:
-            lines = "; ".join(f"{a['recipient']}: {a['status'].upper()}" for a in c["alerts"])
-            extra = (" E-mail sending is not connected in this version, so PENDING notifications have been recorded "
-                     "but not sent." if any(a["status"] == "pending" for a in c["alerts"]) else "")
-            secs = [_sec("record", "Notification record", lines + "." + extra)]
+            lines = "; ".join(f"{ALERT_KIND.get(a['kind'], a['kind'])}: {alert_text(a)}" for a in c["alerts"])
+            secs = [_sec("record", "Notification record", lines + ".")]
         else:
             secs = [_sec("record", "Notification record", "No notification was recorded for this incident.")]
     elif kind == "ack":

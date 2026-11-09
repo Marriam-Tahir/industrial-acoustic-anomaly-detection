@@ -22,6 +22,11 @@ STATE_TEXT = {"NORMAL": "Within normal range", "WATCH": "Isolated deviation", "W
               "HIGH": "Sustained deviation", "NO_DATA": "Not analysed yet"}
 CLIP = {"within_normal": ("WITHIN NORMAL RANGE", "#3fb27f"), "above_warning_limit": ("ABOVE WARNING LIMIT", "#f0a31c"),
         "above_alarm_limit": ("ABOVE ALARM LIMIT", "#e5534b")}
+ALERT_STATUS = {   # e-mail delivery status -> (label, colour, background)
+    "sent": ("SENT", "#3fb27f", "#1d3a33"), "dry_run": ("TEST MODE - NOT SENT", "#d9a23c", "#3b3324"),
+    "pending": ("PENDING", "#79aedb", "#20344a"), "failed": ("FAILED", "#e5534b", "#43262b"),
+    "suppressed": ("SUPPRESSED", "#a9b6c4", "#26313e")}
+ALERT_KIND = {"high_opened": "HIGH incident opened", "reminder": "Reminder", "test": "Test e-mail", "closed": "Closed"}
 SEVERITY_ORDER = {"HIGH": 0, "WARNING": 1, "WATCH": 2, "NORMAL": 3, "NO_DATA": 4}
 
 CSS = """
@@ -236,6 +241,27 @@ def status_pill(status: str, acknowledged: bool = False) -> str:
     if status == "open":
         return _pill("OPEN", SEVERITY["HIGH"], SEVERITY_BG["HIGH"])
     return _pill("CLOSED", "#a9b6c4", SEVERITY_BG["NO_DATA"])
+
+
+def alert_pill(status: str) -> str:
+    label, color, bg = ALERT_STATUS.get(status, (status.upper(), "#a9b6c4", "#26313e"))
+    return _pill(label, color, bg)
+
+
+def alert_text(a: dict) -> str:
+    """One plain sentence about where an alert e-mail stands (used by the assistant and the reports)."""
+    st = a["status"]
+    if st == "sent":
+        return f"sent to {a['recipient']} at {fmt_time(a['sent_utc'])} UTC"
+    if st == "dry_run":
+        return f"saved in test mode for {a['recipient']} at {fmt_time(a['sent_utc'])} UTC, NOT sent (no mail server configured)"
+    if st == "pending":
+        return f"waiting to be sent to {a['recipient']}" + (f" (last attempt failed: {a['last_error']})" if a.get("last_error") else "")
+    if st == "failed":
+        return f"FAILED to reach {a['recipient']} after {a['attempts']} attempts: {a['last_error']}"
+    if st == "suppressed":
+        return f"not sent to {a['recipient']} because e-mail alerts were switched off"
+    return f"{st} ({a['recipient']})"
 
 
 def plain_pill(label: str, color: str = "#a9b6c4", bg: str = "#26313e") -> str:

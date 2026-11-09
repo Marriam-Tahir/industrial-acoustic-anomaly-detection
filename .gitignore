@@ -261,3 +261,4 @@ data/app/
 *.db-wal
 *.db-shm
 .env
+config/smtp.env

@@ -810,11 +810,16 @@ def incident_detail(iid):
                  ui.table(["Time", "Change"], [[ui.esc(ui.fmt_time(e["event_utc"], False)), f"{ui.pill(e['from_state'])} → {ui.pill(e['to_state'])}"]
                                                for e in reversed(events)], empty="None recorded in this period."))
             al = full.get("alerts", [])
-            html('<div class="sl-label" style="margin-top:16px">Notification</div>' +
-                 ui.table(["Recipient", "Status"], [[ui.esc(a["recipient"]), ui.esc(a["status"].upper())] for a in al],
+            html('<div class="sl-label" style="margin-top:16px">Notifications</div>' +
+                 ui.table(["E-mail", "Status", "Time (UTC)"],
+                          [[ui.esc(ui.ALERT_KIND.get(a["kind"], a["kind"])) + f'<div class="dim">{ui.esc(a["recipient"])}</div>',
+                            ui.alert_pill(a["status"]), ui.esc(ui.fmt_short(a["sent_utc"] or a["created_utc"]))] for a in reversed(al)],
                           empty="No notification recorded."))
-            if any(a["status"] == "pending" for a in al):
-                html('<div class="sl-help">PENDING: recorded but not sent. E-mail sending is not connected yet.</div>')
+            if any(a["status"] == "dry_run" for a in al):
+                html('<div class="sl-help">TEST MODE: no mail server is configured, so the message was saved as a file '
+                     'and not sent. See Settings.</div>')
+            if any(a["status"] == "failed" for a in al):
+                html('<div class="sl-help">A FAILED e-mail can be put back in the queue under Settings.</div>')
             notes = call(c.notes, iid) or []
             html('<div class="sl-label" style="margin-top:16px">Operator notes</div>' +
                  (ui.table(["Time", "By", "Note"], [[ui.esc(ui.fmt_time(n["created_utc"])), ui.esc(n["author"]), ui.esc(n["note"])]
@@ -1006,18 +1011,20 @@ def settings_page():
                     st.error("The new passwords do not match.")
                 elif call(c.change_password, cur, new):
                     st.success("Password changed. Other sessions were signed out.")
+    mail = call(c.mail_status) or {}
     with right, card("email"):
         t1, t2 = st.columns([3, 1.3], vertical_alignment="center")
         t1.markdown('<div class="sl-h">Email notifications</div>', unsafe_allow_html=True)
-        t2.markdown('<div style="text-align:right"><span class="sl-chip">NOT CONNECTED</span></div>', unsafe_allow_html=True)
-        html(f'<div class="sl-help">One notification is recorded for each machine\'s owner when a new HIGH incident opens; '
-             f'repeated HIGH windows do not create duplicates. {ui.esc(sysinfo.get("email_note", ""))} '
-             f'Recipients are the owner e-mails in the registry below.</div>')
+        chip = ('<span class="sl-chip steel">SMTP CONFIGURED</span>' if mail.get("mode") == "smtp"
+                else '<span class="sl-chip">TEST MODE</span>')
+        t2.markdown(f'<div style="text-align:right">{chip}</div>', unsafe_allow_html=True)
+        html(f'<div class="sl-help">An e-mail goes to the machine\'s owner when a new HIGH incident opens; repeated HIGH '
+             f'windows do not send duplicates. {ui.esc(sysinfo.get("email_note", ""))}</div>')
         s = call(c.settings) or {}
         with st.form("settings", border=False):
-            alerts_on = st.checkbox("Record notifications for new HIGH incidents", bool(s.get("alerts_enabled", True)))
+            alerts_on = st.checkbox("Send e-mails for new HIGH incidents", bool(s.get("alerts_enabled", True)))
             a, b = st.columns(2)
-            per_hour = a.number_input("Most notifications per hour", 1, 100, int(s.get("max_emails_per_hour", 10)))
+            per_hour = a.number_input("Most e-mails per hour", 1, 100, int(s.get("max_emails_per_hour", 10)))
             remind = b.number_input("Reminder (minutes, 0 = off)", 0, 1440, int(s.get("reminder_minutes", 0)))
             speed = st.number_input("Simulated monitoring: real seconds per 10-second clip", 0.05, 10.0,
                                     float(s.get("replay_seconds_per_window", 1.0)), step=0.05)
@@ -1025,6 +1032,8 @@ def settings_page():
                 if call(c.update_settings, alerts_enabled=alerts_on, max_emails_per_hour=int(per_hour),
                         reminder_minutes=int(remind), replay_seconds_per_window=float(speed)):
                     st.success("Settings saved.")
+    html('<div style="height:16px"></div>')
+    email_delivery_card(mail)
     html('<div style="height:16px"></div>')
     with card("registry"):
         lim = limits()
@@ -1059,6 +1068,68 @@ def settings_page():
         html(ui.table(["Time (UTC)", "User", "Action", "Detail"],
                       [[ui.esc(ui.fmt_time(r["created_utc"])), ui.esc(r["actor"]), ui.esc(r["action"]), ui.esc(r["detail"])] for r in rows],
                       empty="No audit entries."))
+
+
+def email_delivery_card(mail: dict):
+    c = client()
+    with card("delivery"):
+        h("E-mail delivery", "Messages waiting, sent and failed. Failed messages are retried automatically up to "
+                             f"{mail.get('max_attempts', 3)} times.")
+        if mail.get("config_error"):
+            html(ui.banner("warn", "<b>The mail settings could not be read:</b> " + ui.esc(mail["config_error"])))
+        if mail.get("mode") == "smtp":
+            server = f"{mail['host']}:{mail['port']} ({mail['security'].upper()})"
+            cfg_rows = [("Mode", "SMTP: messages are sent"), ("Mail server", ui.esc(server)),
+                        ("Sender", ui.esc(mail.get("sender") or "-")),
+                        ("Password", "set" if mail.get("password_set") else "not set")]
+        else:
+            cfg_rows = [("Mode", "TEST MODE: messages are saved, not sent"), ("Saved in", ui.esc(mail.get("outbox", ""))),
+                        ("To send real e-mails", "fill in config/smtp.env and restart the API")]
+        last = mail.get("last_run") or {}
+        cfg_rows += [("Automatic sending", f"every {mail.get('interval_s', 30):g} s" if mail.get("worker_running")
+                      else "off (use Send pending now)"),
+                     ("Last run (UTC)", ui.esc(ui.fmt_time(last.get("time_utc"))) or "not yet")]
+        counts = mail.get("counts", {})
+        l, r = st.columns([1.2, 1], gap="medium")
+        with l:
+            html(ui.facts(cfg_rows, left=True))
+            if last.get("error"):
+                html(ui.banner("warn", "<b>Last run failed:</b> " + ui.esc(last["error"])))
+        with r:
+            html(ui.stat_strip([("Waiting", str(counts.get("pending", 0)), None), ("Sent", str(counts.get("sent", 0)), None),
+                                ("Test mode", str(counts.get("dry_run", 0)), None), ("Failed", str(counts.get("failed", 0)), None)]))
+            if st.button("Send pending now", key="mail_now"):
+                res = call(c.mail_process)
+                if res is not None:
+                    st.session_state["mail_flash"] = (
+                        f"Sent {res['sent']}, saved in test mode {res['saved_test_mode']}, will retry {res['retry_later']}, "
+                        f"failed {res['failed']}, waiting for the hourly limit {res['waiting_for_hourly_limit']}.")
+                    st.rerun()
+            with st.form("mail_test", clear_on_submit=False, border=False):
+                q1, q2 = st.columns([2.2, 1], vertical_alignment="bottom")
+                to = q1.text_input("Send a test e-mail to", placeholder="name@example.com")
+                if q2.form_submit_button("Send test", use_container_width=True) and to.strip():
+                    r_ = call(c.mail_test, to.strip())
+                    if r_:
+                        st.session_state["mail_flash"] = f"Test e-mail to {r_['recipient']}: " + ui.alert_text(r_) + "."
+                        st.rerun()
+        if st.session_state.get("mail_flash"):
+            html(ui.banner("info", ui.esc(st.session_state.pop("mail_flash"))))
+        rows = call(c.alerts, None, 50) or []
+        html('<div class="sl-label" style="margin-top:8px">Recent e-mails</div>' +
+             ui.table(["Created (UTC)", "Type", "Recipient", "Subject", "Status", "Tries", "Problem"],
+                      [[ui.esc(ui.fmt_short(a["created_utc"])), ui.esc(ui.ALERT_KIND.get(a["kind"], a["kind"])),
+                        ui.esc(a["recipient"]), ui.esc(a["subject"]), ui.alert_pill(a["status"]), str(a["attempts"]),
+                        f'<span class="dim">{ui.esc(a["last_error"])}</span>'] for a in rows],
+                      ["high" if a["status"] == "failed" else "" for a in rows], empty="No e-mails recorded yet."))
+        failed = [a for a in rows if a["status"] == "failed"]
+        if failed:
+            f1, f2, _ = st.columns([2, 1, 2], vertical_alignment="bottom")
+            pick = f1.selectbox("Failed e-mail", failed, format_func=lambda a: f"#{a['id']} · {a['recipient']} · {a['subject']}")
+            if f2.button("Put back in queue", key="mail_retry"):
+                if call(c.retry_alert, pick["id"]):
+                    st.session_state["mail_flash"] = f"E-mail #{pick['id']} is back in the queue."
+                    st.rerun()
 
 
 # ----------------------------------------------------------------------------- main

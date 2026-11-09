@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from smart_listener import repo
-from smart_listener.dashboard_ui import fmt_time, inc_code, machine_type_of
+from smart_listener.dashboard_ui import ALERT_KIND, alert_text, fmt_time, inc_code, machine_type_of
 
 PRODUCT = "Smart Listener - Industrial Acoustic Anomaly Detection"
 LIMITATION = ("This report records model measurements and system events. The model measures how unlike its learned "
@@ -160,9 +160,7 @@ def incident_pdf(conn, incident_id: int, evidence_dir=None, include_evidence: bo
     d.rows([(fmt_time(e["event_utc"]), f"{e['from_state']} -> {e['to_state']}   {e['reason']}") for e in reversed(events)]
            or [("-", "none recorded")])
     d.text("Notifications", bold=True)
-    d.rows([(a["recipient"], a["status"].upper() + ("  (e-mail sending is not connected; recorded only)"
-                                                     if a["status"] == "pending" else "")) for a in alerts]
-           or [("-", "none recorded")])
+    d.rows([(ALERT_KIND.get(a["kind"], a["kind"]), alert_text(a)) for a in reversed(alerts)] or [("-", "none recorded")])
     if notes:
         d.text("Operator notes", bold=True)
         d.rows([(f"{fmt_time(n['created_utc'])}  {n['author']}", n["note"]) for n in notes])

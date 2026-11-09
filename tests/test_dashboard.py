@@ -302,7 +302,7 @@ def test_settings_show_email_not_connected_and_registry(server, api_client):
     simulated_run(api_client)
     at = page(run_app(server), "settings")
     t = md(at)
-    assert "NOT CONNECTED" in t and "Machine registry" in t and "FAN-06" in t and "Available" in t and "Limits z (warn / alarm)" in t
+    assert "TEST MODE" in t and "E-mail delivery" in t and "Machine registry" in t and "FAN-06" in t and "Available" in t and "Limits z (warn / alarm)" in t
 
 
 def test_names_from_the_database_cannot_inject_html(server, api_client):

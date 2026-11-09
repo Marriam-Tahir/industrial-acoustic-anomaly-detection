@@ -4,4 +4,6 @@ import os
 
 from smart_listener.api import create_app
 
-app = create_app(session_hours=float(os.environ.get("SL_SESSION_HOURS", "12")))
+app = create_app(session_hours=float(os.environ.get("SL_SESSION_HOURS", "12")),
+                 start_mail_worker=os.environ.get("SL_MAIL_WORKER", "1") != "0",
+                 mail_interval=float(os.environ.get("SL_MAIL_INTERVAL", "30")))

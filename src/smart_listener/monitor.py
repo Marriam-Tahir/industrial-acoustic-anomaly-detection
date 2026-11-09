@@ -171,7 +171,8 @@ def process_window(conn, analyzer, st: SessionState, y: np.ndarray, window_utc: 
     if event == "opened":
         st.incident_id = repo.open_incident(conn, machine_id=st.machine["id"], opened_utc=window_utc, analysis_id=aid,
                                             z=res.z, score=res.score, summary={"model_group": group, "source": st.source})
-        alerts.record_high_alerts(conn, st.machine, st.incident_id, window_utc, res.z, st.settings, sentence)
+        alerts.record_high_alerts(conn, st.machine, st.incident_id, window_utc, res.z, st.settings, sentence,
+                                  source=st.source, z_alarm=res.z_alarm)
         st.counts["incidents_opened"] += 1
         incident_event = "opened"
     elif event == "reopened" and st.incident_id:
