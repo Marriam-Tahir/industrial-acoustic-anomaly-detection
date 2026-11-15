@@ -10,17 +10,21 @@ from pathlib import Path
 from typing import Optional
 
 from smart_listener import repo
-from smart_listener.dashboard_ui import ALERT_KIND, alert_text, fmt_time, inc_code, machine_type_of
+from smart_listener.dashboard_ui import (ALERT_KIND, CLIP, TZ_LABEL, TZ_NAME, alert_text, fmt_time, inc_code, local_iso,
+                                         machine_code, machine_type_of, to_local)
 
 PRODUCT = "Smart Listener - Industrial Acoustic Anomaly Detection"
 LIMITATION = ("This report records model measurements and system events. The model measures how unlike its learned "
               "normal sound a machine is. It does not diagnose the physical fault (fault diagnosis: not determined), "
               "does not predict failure time and does not give a probability of failure.")
 
+# Times: the *_utc columns are the stored UTC values (unchanged); the *_pkt columns are the same moments in Pakistan
+# time (Asia/Karachi, UTC+05:00), which is what the website shows.
 INCIDENT_COLUMNS = ["incident", "machine_id", "machine_name", "machine_type", "status", "opened_utc", "closed_utc",
-                    "peak_z", "peak_score", "high_windows", "times_reopened", "acknowledged", "ack_by", "ack_utc", "ack_note"]
+                    "peak_z", "peak_score", "high_windows", "times_reopened", "acknowledged", "ack_by", "ack_utc", "ack_note",
+                    "opened_pkt", "closed_pkt", "ack_pkt"]
 ANALYSIS_COLUMNS = ["analysis_id", "machine_id", "machine_name", "source", "source_ref", "window_utc", "model", "score",
-                    "z", "z_warn", "z_alarm", "clip_level", "severity_state", "session_id"]
+                    "z", "z_warn", "z_alarm", "clip_level", "severity_state", "session_id", "window_pkt"]
 
 
 def _csv(header, rows) -> str:
@@ -35,14 +39,15 @@ def incidents_csv(incidents: list) -> str:
     return _csv(INCIDENT_COLUMNS, [[inc_code(i["id"]), i["model_group"], i["machine_name"], i["machine_type"], i["status"],
                                     i["opened_utc"], i["closed_utc"] or "", f"{i['peak_z']:.3f}", f"{i['peak_score']:.6f}",
                                     i["n_windows"], i["n_reopened"], "yes" if i["acknowledged"] else "no",
-                                    i["ack_by"] or "", i["ack_utc"] or "", i["ack_note"]] for i in incidents])
+                                    i["ack_by"] or "", i["ack_utc"] or "", i["ack_note"], local_iso(i["opened_utc"]),
+                                    local_iso(i["closed_utc"]), local_iso(i["ack_utc"])] for i in incidents])
 
 
 def analyses_csv(rows: list) -> str:
     return _csv(ANALYSIS_COLUMNS, [[a["id"], a["model_group"], a["machine_name"], a["source"], a["source_ref"],
                                     a["window_utc"], a["model_kind"], f"{a['score']:.6f}", f"{a['z']:.3f}",
                                     f"{a['z_warn']:.2f}", f"{a['z_alarm']:.2f}", a["clip_level"], a["state"] or "",
-                                    a["session_id"] or ""] for a in rows])
+                                    a["session_id"] or "", local_iso(a["window_utc"])] for a in rows])
 
 
 # ----------------------------------------------------------------------------- PDF
@@ -71,6 +76,7 @@ class _Pdf:
             self.plt.close(self.fig)
         self.fig = self.plt.figure(figsize=(self.W, self.H))
         self.fig.text(0.07, 0.965, PRODUCT, fontsize=8.5, color="#4a6a86")
+        self.fig.text(0.93, 0.965, f"Times: {TZ_LABEL} ({TZ_NAME}, UTC+05:00)", fontsize=7.5, color="#7d8b9b", ha="right")
         self.y = 0.93
 
     def _need(self, h):
@@ -146,7 +152,7 @@ def incident_pdf(conn, incident_id: int, evidence_dir=None, include_evidence: bo
     d.text(f"Incident report  {inc_code(i['id'])}", size=17, bold=True, gap=0.012)
     d.rows([("Machine", f"{i['machine_name']} ({i['model_group']})"), ("Machine type", machine_type_of(i["model_group"])),
             ("Highest severity", "HIGH"), ("Status", i["status"].upper()),
-            ("Start time (UTC)", fmt_time(i["opened_utc"])), ("End time (UTC)", fmt_time(i["closed_utc"]) or "ongoing"),
+            ("Start time (PKT)", fmt_time(i["opened_utc"])), ("End time (PKT)", fmt_time(i["closed_utc"]) or "ongoing"),
             ("Peak anomaly level", f"z = {i['peak_z']:.2f}  (score {i['peak_score']:.4f})"),
             ("Alarm / warning limit", f"z > {opening['z_alarm']:.2f} / z > {opening['z_warn']:.2f}" if opening else "not recorded"),
             ("Windows at HIGH", i["n_windows"]), ("Times re-opened", i["n_reopened"]),
@@ -182,6 +188,11 @@ def incident_pdf(conn, incident_id: int, evidence_dir=None, include_evidence: bo
     return d.bytes()
 
 
+def _local_day(ts) -> str:
+    d = to_local(ts)
+    return d.date().isoformat() if d else ""
+
+
 def machine_pdf(conn, machine_id: int, date_from: Optional[str], date_to: Optional[str], evidence_dir=None,
                 include_evidence: bool = True) -> bytes:
     from smart_listener import evidence
@@ -190,15 +201,18 @@ def machine_pdf(conn, machine_id: int, date_from: Optional[str], date_to: Option
         raise LookupError("machine not found")
     rows = repo.list_analyses_between(conn, machine_id, date_from, date_to)
     incs = [i for i in repo.list_incidents(conn, None, machine_id, 1000)
-            if (not date_from or i["opened_utc"][:10] >= date_from) and (not date_to or i["opened_utc"][:10] <= date_to)]
+            if (not date_from or _local_day(i["opened_utc"]) >= date_from)
+            and (not date_to or _local_day(i["opened_utc"]) <= date_to)]
     period = f"{date_from or 'first record'} to {date_to or 'latest record'}"
     d = _Pdf(f"Machine report {m['model_group']}")
     d.text(f"Machine report  {m['name']}", size=17, bold=True, gap=0.012)
     sim = [r for r in rows if r["source"] == "simulated"]
     up = [r for r in rows if r["source"] == "upload"]
+    parts = ([f"{len(up)} from uploaded recordings"] if up else []) + \
+            ([f"{len(sim)} from simulated monitoring"] if sim else [])
     d.rows([("Machine ID", m["model_group"]), ("Machine type", machine_type_of(m["model_group"])),
             ("Location", m["location"] or "-"), ("Owner", f"{m['owner_name']} <{m['owner_email']}>"),
-            ("Period (UTC)", period), ("Windows analysed", f"{len(rows)}  ({len(sim)} simulated monitoring, {len(up)} uploaded)"),
+            ("Period (PKT dates)", period), ("Windows analysed", f"{len(rows)}" + (f"  ({', '.join(parts)})" if parts else "")),
             ("Highest anomaly level", f"z = {max(r['z'] for r in rows):.2f}" if rows else "no data"),
             ("Limits", f"warning z > {rows[0]['z_warn']:.2f}, alarm z > {rows[0]['z_alarm']:.2f}" if rows else "-"),
             ("Windows above alarm limit", sum(r["clip_level"] == "above_alarm_limit" for r in rows)),
@@ -222,6 +236,93 @@ def machine_pdf(conn, machine_id: int, date_from: Optional[str], date_to: Option
         if png:
             d.text(f"Evidence for the highest window ({fmt_time(top['window_utc'])}, z = {top['z']:.1f})", bold=True)
             d.image(png)
+    d.rule()
+    d.text(LIMITATION, size=8.5, color="#5b6b7b")
+    return d.bytes()
+
+
+# ----------------------------------------------------------------------------- one uploaded file (e-mail attachments)
+UPLOAD_COLUMNS = ["analysis_id", "machine_id", "machine_group", "machine_name", "machine_type", "file_name",
+                  "window_number", "start_s", "end_s", "window_utc", "window_pkt", "model", "score_mse", "z", "z_warn",
+                  "z_alarm", "window_result", "file_severity"]
+
+
+def _offset(a: dict) -> float:
+    try:
+        return float(json.loads(a.get("evidence_json") or "{}").get("offset_s", 0.0))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def upload_rows(conn, machine_id: int, session_id: int) -> list:
+    """The saved windows of one uploaded file, in file order (what the attachments are built from)."""
+    return sorted(repo.list_analyses(conn, machine_id, 100000, 0, "upload", session_id), key=lambda a: (_offset(a), a["id"]))
+
+
+def severity_text(outcome: dict) -> str:
+    if outcome["assessed"]:
+        return f"{outcome['severity']}  (judged over {outcome['n_windows']} consecutive 10-second windows)"
+    return (f"not assessed - the file has {outcome['n_windows']} window(s); severity needs at least "
+            f"{outcome['n_needed']} (about {outcome['n_needed'] * 10} s). Window result is used instead.")
+
+
+def analysis_csv(machine: dict, rows: list, outcome: dict) -> str:
+    """One line per analysed 10-second window of the uploaded file."""
+    sev = outcome["severity"] if outcome["assessed"] else "not assessed"
+    return _csv(UPLOAD_COLUMNS, [[a["id"], machine_code(machine["model_group"]), machine["model_group"], machine["name"],
+                                  machine["machine_type"], a["source_ref"], k, f"{_offset(a):.0f}", f"{_offset(a) + 10:.0f}",
+                                  a["window_utc"], local_iso(a["window_utc"]), a["model_kind"], f"{a['score']:.6f}",
+                                  f"{a['z']:.3f}", f"{a['z_warn']:.2f}", f"{a['z_alarm']:.2f}",
+                                  CLIP.get(a["clip_level"], (a["clip_level"],))[0], sev]
+                                 for k, a in enumerate(rows, 1)])
+
+
+def analysis_pdf(conn, machine: dict, session_id: int, outcome: dict, file_name: str, warnings=(), caution: str = "",
+                 evidence_dir=None) -> bytes:
+    """PDF report of ONE uploaded recording, built from the windows saved in the database."""
+    rows = upload_rows(conn, machine["id"], session_id)
+    if not rows:
+        raise LookupError("no analysed windows for this upload")
+    sess = repo.get_session_row(conn, session_id) or {}
+    worst = max(rows, key=lambda a: a["z"])
+    code = machine_code(machine["model_group"])
+    d = _Pdf(f"Upload analysis {code}")
+    d.text(f"Upload analysis report  {code}", size=17, bold=True, gap=0.012)
+    d.rows([("Machine ID", f"{code}  ({machine['model_group']})"), ("Machine name", machine["name"]),
+            ("Machine type", machine_type_of(machine["model_group"])), ("Location", machine.get("location") or "-"),
+            ("Owner", f"{machine['owner_name']} <{machine['owner_email']}>"),
+            ("Analysis date/time (PKT)", fmt_time(sess.get("started_utc") or rows[0]["created_utc"])),
+            ("File", file_name), ("Windows analysed", f"{len(rows)} x 10 s"),
+            ("Operational severity", severity_text(outcome)),
+            ("Highest window result", f"{CLIP.get(worst['clip_level'], (worst['clip_level'],))[0]}  "
+                                      f"({_offset(worst):.0f} s to {_offset(worst) + 10:.0f} s)"),
+            ("Highest anomaly level", f"z = {worst['z']:.2f}"),
+            ("Anomaly score (MSE)", f"{worst['score']:.6f}"),
+            ("Limits", f"warning z > {worst['z_warn']:.2f}, alarm z > {worst['z_alarm']:.2f}"),
+            ("Windows above warning limit", sum(a["clip_level"] != "within_normal" for a in rows)),
+            ("Windows above alarm limit", sum(a["clip_level"] == "above_alarm_limit" for a in rows)),
+            ("Model", worst["model_kind"]), ("Data source", "Uploaded recording (a manual check, not live monitoring)"),
+            ("Fault diagnosis", "not determined")])
+    notes = [w for w in warnings if w] + ([f"Model reliability: {caution}"] if caution else [])
+    if notes:
+        d.rule()
+        d.text("Warnings", bold=True)
+        for w in notes:
+            d.text(f"- {w}", size=9, color="#9a6a00")
+    d.rule()
+    d.text("Every 10-second window", bold=True)
+    d.rows([(f"{k}.  {_offset(a):.0f}-{_offset(a) + 10:.0f} s",
+             f"z = {a['z']:6.2f}   MSE {a['score']:.6f}   {CLIP.get(a['clip_level'], (a['clip_level'],))[0]}")
+            for k, a in enumerate(rows, 1)])
+    png = _evidence_png(evidence_dir, worst)
+    if png:
+        d._need(0.5)                                   # keep the heading on the same page as the picture
+        d.text("Evidence for the highest window: waveform, log-mel spectrogram, residual heatmap, anomaly level", bold=True)
+        d.image(png)
+        try:
+            d.text(json.loads(worst["evidence_json"]).get("sentence", ""), size=8.5)
+        except ValueError:
+            pass
     d.rule()
     d.text(LIMITATION, size=8.5, color="#5b6b7b")
     return d.bytes()

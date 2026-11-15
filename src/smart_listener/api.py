@@ -10,6 +10,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -258,6 +259,17 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
     finally:
         conn.close()
 
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Basic hardening for every response: no MIME sniffing, no framing, no caching of private data."""
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
     # ---- health and login
     @app.get("/health")
     def health():
@@ -402,6 +414,27 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
             raise HTTPException(409, "this machine is inactive; activate it first")
         return m
 
+    def _upload_email(request: Request, conn, machine: dict, result: dict, file_name: str, warnings, caution: str) -> dict:
+        """E-mail the owner when an uploaded file's result is not normal (see alerts.analysis_outcome). A problem here
+        is reported in the answer but never stops the analysis result from being returned."""
+        from smart_listener import alerts, severity
+        try:
+            out = alerts.record_analysis_alert(conn, machine, result, repo.get_settings(conn),
+                                               Path(request.app.state.db_path).parent,
+                                               {**severity.DEFAULT_RULE, **(request.app.state.analyzer.rule or {})}["n_window"], file_name, warnings, caution,
+                                               request.app.state.evidence_dir)
+        except Exception as e:   # the analysis itself is already saved
+            return {"needed": None, "reason": f"could not prepare the e-mail: {type(e).__name__}: {e}",
+                    "alert_id": None, "status": "error"}
+        if out["alert_id"] and out["status"] == "pending" and request.app.state.mail_worker_started:
+            def deliver():
+                try:
+                    request.app.state.mail.run_now()      # same lock as the timer: never sent twice
+                except Exception:
+                    pass                                   # recorded on the worker; the timer tries again
+            threading.Thread(target=deliver, name="mail-upload", daemon=True).start()
+        return out
+
     @app.post("/machines/{machine_id}/analyze-upload")
     def analyze_upload(machine_id: int, request: Request, file: UploadFile = File(...), admin=Depends(current_admin),
                        conn=Depends(get_conn)):
@@ -433,9 +466,11 @@ def create_app(db_path=None, cfg: Optional[dict] = None, session_hours: float = 
                         if p["group"] == machine["model_group"]), {})
         repo.audit(conn, admin["username"], "upload.analyze",
                    f"machine={machine_id} file={_safe_name(file.filename)} windows={result['summary']['n_windows']}")
+        email = _upload_email(request, conn, machine, result, _safe_name(file.filename), prepared.warnings,
+                              profile.get("caution") or "")
         return {"machine": {k: machine[k] for k in ("id", "name", "machine_type", "model_group")},
                 "file": {"name": _safe_name(file.filename), **prepared.info}, "warnings": prepared.warnings,
-                "model_caution": profile.get("caution"), **result,
+                "model_caution": profile.get("caution"), **result, "email": email,
                 "notice": "Anomaly levels show how unlike this machine's normal sound a recording is. They are not "
                           "failure probabilities and do not identify a fault. The audio file was not kept."}
 

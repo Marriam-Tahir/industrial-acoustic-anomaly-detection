@@ -219,7 +219,8 @@ def history_figure(rows: list, z_warn: float, z_alarm: float, title: str = "", t
             ax.set_yticks([])
             bar.axis("off")
             return _fig_to_png(fig)
-        t = [datetime.fromisoformat(r["window_utc"]) for r in rows]
+        from smart_listener.dashboard_ui import to_local
+        t = [to_local(r["window_utc"]).replace(tzinfo=None) for r in rows]      # shown in Pakistan time
         z = [r["z"] for r in rows]
         compress = max(z) > 4 * z_alarm and z_alarm > 0
         if compress:
@@ -241,7 +242,8 @@ def history_figure(rows: list, z_warn: float, z_alarm: float, title: str = "", t
         bar.set_yticks([])
         for sp in ("left", "bottom"):
             bar.spines[sp].set_visible(False)
-        bar.set_xlabel("time (UTC; simulated clock for simulated monitoring)")
+        bar.set_xlabel("time (PKT)" + ("; simulated clock for replayed recordings"
+                                       if any(r.get("source") == "simulated" for r in rows) else ""))
         present = [s for s in STATE_COLORS if any((r.get("state") or "NORMAL") == s for r in rows)]
         ax.legend([plt.Line2D([0], [0], marker="o", ls="", color=STATE_COLORS[s]) for s in present], present,
                   loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=len(present), fontsize=8, frameon=False, labelcolor=p["muted"])

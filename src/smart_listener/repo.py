@@ -306,14 +306,16 @@ def list_incident_notes(conn, incident_id: int) -> list:
 
 def list_analyses_between(conn, machine_id: Optional[int], date_from: Optional[str], date_to: Optional[str],
                           source: Optional[str] = None, limit: int = 100000) -> list:
-    """Analysed windows (oldest first) for reports. Dates are 'YYYY-MM-DD' (UTC), both ends included."""
+    """Analysed windows (oldest first) for reports. Dates are 'YYYY-MM-DD' calendar days in Pakistan time
+    (Asia/Karachi), both ends included; they are converted to the stored UTC times before searching."""
+    from smart_listener.dashboard_ui import local_day_end_utc, local_day_start_utc
     where, args = [], []
     if machine_id:
         where.append("a.machine_id = ?"); args.append(machine_id)
     if date_from:
-        where.append("a.window_utc >= ?"); args.append(date_from)
+        where.append("a.window_utc >= ?"); args.append(local_day_start_utc(date_from))
     if date_to:
-        where.append("a.window_utc < date(?, '+1 day')"); args.append(date_to)
+        where.append("a.window_utc < ?"); args.append(local_day_end_utc(date_to))
     if source:
         where.append("a.source = ?"); args.append(source)
     sql = ("SELECT a.*, m.name AS machine_name, m.model_group FROM analyses a JOIN machines m ON m.id = a.machine_id"
@@ -376,14 +378,18 @@ def fail_stale_sessions(conn) -> int:
 
 # ----------------------------------------------------------------------------- alerts (e-mail records)
 def add_alert(conn, *, machine_id: int, kind: str, recipient: str, subject: str, dedup_key: str,
-              incident_id: Optional[int] = None, body: str = "", status: str = "pending") -> Optional[int]:
+              incident_id: Optional[int] = None, body: str = "", status: str = "pending",
+              attachments: Optional[list] = None) -> Optional[int]:
     """Record an alert. Returns None if an alert with the same dedup_key already exists (this is what stops
-    the same incident from being e-mailed twice)."""
+    the same incident, or the same uploaded analysis, from being e-mailed twice). `attachments` are file paths
+    relative to the database folder (data/app), attached when the e-mail is delivered."""
     try:
         with conn:
             cur = conn.execute("""INSERT INTO alerts(incident_id, machine_id, kind, recipient, subject, body, status,
-                                                     dedup_key, created_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                               (incident_id, machine_id, kind, recipient, subject, body, status, dedup_key, now_utc()))
+                                                     dedup_key, created_utc, attachments_json)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               (incident_id, machine_id, kind, recipient, subject, body, status, dedup_key, now_utc(),
+                                json.dumps(attachments or [])))
     except sqlite3.IntegrityError:
         return None
     return cur.lastrowid

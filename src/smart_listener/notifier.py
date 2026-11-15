@@ -18,6 +18,8 @@ Configuration (environment variables, or a file config/smtp.env with KEY=VALUE l
   SL_SMTP_FROM      sender address (default: SL_SMTP_USER)
 The password is never returned by the API, logged, or stored in the database.
 """
+import json
+import mimetypes
 import smtplib
 import ssl
 import threading
@@ -34,6 +36,8 @@ MAX_ATTEMPTS = 3
 BACKOFF_MINUTES = [1, 4, 16]
 BATCH = 20
 ENV_FILE = Path("config") / "smtp.env"
+EXAMPLE_USERS = {"your.address@gmail.com"}            # the values shipped in config/smtp.env.example
+EXAMPLE_PASSWORDS = {"abcdefghijklmnop"}
 KEYS = ["SL_SMTP_HOST", "SL_SMTP_PORT", "SL_SMTP_SECURITY", "SL_SMTP_USER", "SL_SMTP_PASSWORD", "SL_SMTP_FROM"]
 
 
@@ -85,11 +89,28 @@ def load_mail_config(root: Path, environ: Optional[dict] = None) -> MailConfig:
         raise ValueError("SL_SMTP_SECURITY must be starttls, ssl or none")
     port = int(vals["SL_SMTP_PORT"] or (465 if security == "ssl" else 587))
     password = vals["SL_SMTP_PASSWORD"].replace(" ", "")   # Gmail shows app passwords in groups of four
+    if vals["SL_SMTP_HOST"] and (vals["SL_SMTP_USER"] in EXAMPLE_USERS or password in EXAMPLE_PASSWORDS):
+        raise ValueError(f"{ENV_FILE} still contains the example address or password. Put your own Gmail address and "
+                         f"app password in it, or delete the file to stay in test mode.")
     return MailConfig(vals["SL_SMTP_HOST"], port, security, vals["SL_SMTP_USER"], password,
                       vals["SL_SMTP_FROM"] or vals["SL_SMTP_USER"], src)
 
 
-def build_message(alert: dict, sender: str) -> EmailMessage:
+ATTACHMENT_TYPES = {".pdf": "application/pdf", ".csv": "text/csv", ".png": "image/png"}
+
+
+def _attachment_paths(alert: dict, attach_root: Optional[Path]) -> list:
+    try:
+        names = json.loads(alert.get("attachments_json") or "[]")
+    except ValueError:
+        names = []
+    root = Path(attach_root) if attach_root else Path(".")
+    return [p if p.is_absolute() else root / p for p in (Path(n) for n in names)]
+
+
+def build_message(alert: dict, sender: str, attach_root: Optional[Path] = None) -> EmailMessage:
+    """The e-mail for one alert row. Files listed in the row (upload reports) are attached; a missing file is an
+    error, so the e-mail is retried / marked FAILED with the reason instead of going out without its report."""
     msg = EmailMessage()
     msg["From"] = sender or "smart-listener@localhost"
     msg["To"] = alert["recipient"]
@@ -98,6 +119,15 @@ def build_message(alert: dict, sender: str) -> EmailMessage:
     msg["Message-ID"] = make_msgid(domain="smart-listener.local")
     msg["X-Smart-Listener-Alert"] = str(alert["id"])
     msg.set_content(alert["body"] or alert["subject"])
+    for path in _attachment_paths(alert, attach_root):
+        if not path.is_file():
+            raise FileNotFoundError(f"attachment missing: {path.name}")
+        # fixed types for our own report files: Windows may report .csv as an Excel type, which mail apps then
+        # open differently; other files fall back to the system's guess
+        ctype = ATTACHMENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] \
+            or "application/octet-stream"
+        main, sub = ctype.split("/", 1)
+        msg.add_attachment(path.read_bytes(), maintype=main, subtype=sub, filename=path.name)
     return msg
 
 
@@ -140,14 +170,19 @@ def friendly_error(e: Exception) -> str:
                 "(Google Account > Security > App passwords), not your normal password.")
     if isinstance(e, smtplib.SMTPRecipientsRefused):
         return "The mail server refused the recipient address."
+    if isinstance(e, FileNotFoundError) and "attachment missing" in str(e):
+        return f"{e} (the report file was deleted from data/app/attachments)."
     if isinstance(e, (TimeoutError, ConnectionError, OSError)) and not isinstance(e, smtplib.SMTPException):
         return f"Could not connect to the mail server ({type(e).__name__}: {e})."
     return f"{type(e).__name__}: {e}"
 
 
-def process_once(conn, cfg: MailConfig, sender, outbox: Path, now: Optional[datetime] = None) -> dict:
-    """One pass: add due reminders, then deliver due alerts within the hourly limit. Returns what happened."""
+def process_once(conn, cfg: MailConfig, sender, outbox: Path, now: Optional[datetime] = None,
+                 attach_root: Optional[Path] = None) -> dict:
+    """One pass: add due reminders, then deliver due alerts within the hourly limit. Returns what happened.
+    `attach_root` is the folder that attachment paths are relative to (default: the outbox's parent, data/app)."""
     now = now or datetime.now(timezone.utc)
+    attach_root = Path(attach_root) if attach_root else Path(outbox).parent
     settings = repo.get_settings(conn)
     reminders = alerts.record_reminders(conn, settings, now)
     room = settings["max_emails_per_hour"] - repo.count_delivered_since(conn, _iso(now - timedelta(hours=1)))
@@ -164,10 +199,10 @@ def process_once(conn, cfg: MailConfig, sender, outbox: Path, now: Optional[date
         attempts = a["attempts"] + 1
         try:
             if cfg.mode == "smtp":
-                sender.send(build_message(a, cfg.sender))
+                sender.send(build_message(a, cfg.sender, attach_root))
                 status, key = "sent", "sent"
             else:
-                OutboxSender(outbox).send(build_message(a, cfg.sender))
+                OutboxSender(outbox).send(build_message(a, cfg.sender, attach_root))
                 status, key = "dry_run", "saved_test_mode"
             repo.update_alert_delivery(conn, a["id"], status=status, attempts=attempts, sent_utc=_iso(now))
             out[key] += 1
@@ -199,7 +234,8 @@ class MailWorker:
         with self._lock:                       # the timer and a "send now" click never deliver the same row twice
             conn = db.connect(self.db_path)
             try:
-                res = process_once(conn, self.cfg, self.sender, self.outbox)
+                res = process_once(conn, self.cfg, self.sender, self.outbox,
+                                   attach_root=Path(self.db_path).parent)
                 self.last = {"time_utc": _iso(datetime.now(timezone.utc)), "result": res, "error": ""}
                 return res
             except Exception as e:

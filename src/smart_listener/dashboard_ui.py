@@ -4,9 +4,21 @@ Design (from the Figma screens): dark navy/graphite surfaces, steel-blue accents
 Severity colours: NORMAL green, WATCH and WARNING amber (WATCH muted, WARNING strong), HIGH red.
 Everything that comes from the database is HTML-escaped before it is placed in a page.
 """
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, time as _time, timedelta, timezone
 from html import escape
 from typing import Optional
+
+# ----------------------------------------------------------------------------- local time (Pakistan)
+# Every time is STORED in UTC. It is converted to Pakistan Standard Time only when it is shown (website, reports,
+# CSV, e-mails). Windows Python may have no time-zone database (the 'tzdata' package provides it); Pakistan has no
+# daylight saving time, so a fixed UTC+05:00 is then exactly the same.
+TZ_NAME = "Asia/Karachi"
+TZ_LABEL = "PKT"
+try:
+    from zoneinfo import ZoneInfo
+    LOCAL_TZ = ZoneInfo(TZ_NAME)
+except Exception:  # ZoneInfoNotFoundError (no tzdata) or a very old Python
+    LOCAL_TZ = timezone(timedelta(hours=5), TZ_LABEL)
 
 PRODUCT = "Smart Listener"
 PRODUCT_SUB = "Industrial Acoustic Anomaly Detection"
@@ -26,7 +38,8 @@ ALERT_STATUS = {   # e-mail delivery status -> (label, colour, background)
     "sent": ("SENT", "#3fb27f", "#1d3a33"), "dry_run": ("TEST MODE - NOT SENT", "#d9a23c", "#3b3324"),
     "pending": ("PENDING", "#79aedb", "#20344a"), "failed": ("FAILED", "#e5534b", "#43262b"),
     "suppressed": ("SUPPRESSED", "#a9b6c4", "#26313e")}
-ALERT_KIND = {"high_opened": "HIGH incident opened", "reminder": "Reminder", "test": "Test e-mail", "closed": "Closed"}
+ALERT_KIND = {"high_opened": "HIGH incident opened", "reminder": "Reminder", "test": "Test e-mail", "closed": "Closed",
+              "analysis": "Upload analysis result"}
 SEVERITY_ORDER = {"HIGH": 0, "WARNING": 1, "WATCH": 2, "NORMAL": 3, "NO_DATA": 4}
 
 CSS = """
@@ -192,21 +205,42 @@ def parse_ts(ts: Optional[str]) -> Optional[datetime]:
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
+def to_local(ts) -> Optional[datetime]:
+    """A stored UTC time (text or datetime) as an aware datetime in Pakistan time. None if there is no time."""
+    d = parse_ts(ts) if not isinstance(ts, datetime) else (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc))
+    return d.astimezone(LOCAL_TZ) if d is not None else None
+
+
+def local_iso(ts) -> str:
+    """'2026-11-09T15:30:00+05:00' for CSV files ('' if there is no time)."""
+    d = to_local(ts)
+    return d.isoformat(timespec="seconds") if d else ""
+
+
+def local_day_start_utc(day: str) -> str:
+    """Start of a Pakistan calendar day ('2026-11-09') as stored UTC text, for date filters."""
+    d = datetime.combine(_date.fromisoformat(day), _time(0), tzinfo=LOCAL_TZ)
+    return d.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def local_day_end_utc(day: str) -> str:
+    """Start of the NEXT Pakistan day as UTC text (use with '<')."""
+    return local_day_start_utc((_date.fromisoformat(day) + timedelta(days=1)).isoformat())
+
+
 def fmt_short(ts: Optional[str]) -> str:
-    """'3:42 PM · 09 Nov' (UTC) for tables."""
-    d = parse_ts(ts)
+    """'3:42 PM · 09 Nov' (Pakistan time) for tables."""
+    d = to_local(ts)
     if d is None:
         return ""
-    d = d.astimezone(timezone.utc)
     return f"{d.strftime('%I:%M %p').lstrip('0')} · {d.day:02d} {d.strftime('%b')}"
 
 
 def fmt_time(ts: Optional[str], date: bool = True) -> str:
-    """'10:30 AM, 09 Nov 2026' (UTC). Empty string if there is no time."""
-    d = parse_ts(ts)
+    """'3:30 PM, 09 Nov 2026' (Pakistan time). Empty string if there is no time."""
+    d = to_local(ts)
     if d is None:
         return ""
-    d = d.astimezone(timezone.utc)
     t = d.strftime("%I:%M %p").lstrip("0")
     return f"{t}, {d.day:02d} {d.strftime('%b %Y')}" if date else t
 
@@ -252,9 +286,9 @@ def alert_text(a: dict) -> str:
     """One plain sentence about where an alert e-mail stands (used by the assistant and the reports)."""
     st = a["status"]
     if st == "sent":
-        return f"sent to {a['recipient']} at {fmt_time(a['sent_utc'])} UTC"
+        return f"sent to {a['recipient']} at {fmt_time(a['sent_utc'])} PKT"
     if st == "dry_run":
-        return f"saved in test mode for {a['recipient']} at {fmt_time(a['sent_utc'])} UTC, NOT sent (no mail server configured)"
+        return f"saved in test mode for {a['recipient']} at {fmt_time(a['sent_utc'])} PKT, NOT sent (no mail server configured)"
     if st == "pending":
         return f"waiting to be sent to {a['recipient']}" + (f" (last attempt failed: {a['last_error']})" if a.get("last_error") else "")
     if st == "failed":

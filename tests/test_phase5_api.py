@@ -102,13 +102,15 @@ def test_upload_abnormal_multi_window_file(client):
     assert len(rows) == 3 and all(r["state"] is None for r in rows)
 
 
-def test_upload_never_changes_alert_state_or_creates_incidents_or_alerts(client):
+def test_upload_never_changes_alert_state_or_creates_incidents(client):
     m = add_machine(client)
     y = np.concatenate([synth_clip("fan", True, RNG) for _ in range(4)])
     assert upload(client, m["id"], wav_bytes(y)).status_code == 200
     fleet = {r["id"]: r for r in client.get("/fleet").json()}
     assert fleet[m["id"]]["current_state"] == "NO_DATA" and fleet[m["id"]]["n_incidents"] == 0
-    assert client.get("/alerts").json() == [] and client.get("/incidents").json() == []
+    assert client.get("/incidents").json() == []
+    # since the upload e-mail feature: a non-normal upload records ONE result e-mail (no incident, no HIGH alert)
+    assert [a["kind"] for a in client.get("/alerts").json()] == ["analysis"]
 
 
 def test_upload_filename_hint_for_another_machine_is_a_warning_not_a_switch(client):

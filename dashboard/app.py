@@ -150,7 +150,7 @@ def alert_banner():
     c1, c2 = st.columns([6, 1], vertical_alignment="center")
     with c1:
         html(ui.banner("high", f"{ui.pill('HIGH')} &nbsp; <b>{ui.esc(code(i['model_group']))}</b> &nbsp;·&nbsp; "
-                               f"{ui.inc_code(i['id'])} open since {ui.esc(ui.fmt_time(i['opened_utc']))} UTC "
+                               f"{ui.inc_code(i['id'])} open since {ui.esc(ui.fmt_time(i['opened_utc']))} PKT "
                                f"&nbsp;·&nbsp; not acknowledged{ui.esc(more)}"))
     with c2:
         st.button("Review incident", key="banner_review", on_click=goto, args=("incidents", i["machine_id"], i["id"]),
@@ -214,7 +214,7 @@ def overview_page():
     with left, card("machine-status"):
         h("Machine status", "Select a machine to view its latest analysis.")
         w = [1.0, 0.65, 1.05, 1.55, 0.7, 1.75, 1.0]
-        th(st.columns(w), ["Machine ID", "Type", "Severity", "Meaning", "Level z", "Last analysed (UTC)", ""])
+        th(st.columns(w), ["Machine ID", "Type", "Severity", "Meaning", "Level z", "Last analysed (PKT)", ""])
         for m in sorted(fleet, key=lambda x: (ui.SEVERITY_ORDER.get(x["current_state"], 9), x["model_group"])):
             with st.container(key=f"row-fleet-{m['id']}"):
                 cols = st.columns(w, vertical_alignment="center")
@@ -240,7 +240,7 @@ def overview_page():
             for i in open_inc[:3]:
                 html(f'<div style="margin:2px 0 8px">{ui.pill("HIGH")} &nbsp;<span class="sl-cell strong">'
                      f'{ui.esc(code(i["model_group"]))}</span></div><div class="sl-help">{ui.inc_code(i["id"])} open since '
-                     f'{ui.esc(ui.fmt_time(i["opened_utc"]))} UTC. Sustained deviation from this machine\'s normal sound'
+                     f'{ui.esc(ui.fmt_time(i["opened_utc"]))} PKT. Sustained deviation from this machine\'s normal sound'
                      f'{"" if i["acknowledged"] else "; not acknowledged"}.</div>')
                 st.button("Review incident", key=f"att_{i['id']}", on_click=goto, args=("incidents", i["machine_id"], i["id"]))
             for m in watch[:4]:
@@ -372,6 +372,25 @@ def cfg_rate() -> str:
     return f"{sr / 1000:g} kHz" if sr else "original rate"
 
 
+def email_note(e):
+    """One line under the result: was the owner e-mailed about this upload?"""
+    if not e:
+        return
+    st_ = e.get("status")
+    if e.get("needed") is False:
+        html(f'<div class="sl-help" style="margin-bottom:10px">E-mail: not needed ({ui.esc(e["reason"])}).</div>')
+    elif st_ == "pending":
+        html(ui.banner("info", f'<b>E-mail to {ui.esc(e["recipient"])}</b> with the PDF report, the CSV of all windows and '
+                               f'the evidence picture is being sent ({ui.esc(e["reason"])}). Its status is under '
+                               f'Settings &rarr; E-mail delivery.'))
+    elif st_ == "suppressed":
+        html(ui.banner("info", "E-mail alerts are switched off in Settings, so this result was recorded but not e-mailed."))
+    elif st_ == "duplicate":
+        html(ui.banner("info", "This analysis has already been e-mailed."))
+    elif st_ == "error":
+        html(ui.banner("warn", "<b>E-mail not prepared.</b> " + ui.esc(e.get("reason", ""))))
+
+
 def result_card(r):
     s, w = r["summary"], r["windows"]
     worst = w[r["worst_window"]]
@@ -394,6 +413,7 @@ def result_card(r):
             html(ui.banner("warn", ui.esc(note)))
         if r.get("model_caution"):
             html(ui.banner("warn", "<b>Model reliability.</b> " + ui.esc(r["model_caution"])))
+        email_note(r.get("email"))
         sev = (ui.pill(s["file_state"]) + f'<div class="sl-help">Judged over {s["n_windows"]} consecutive windows.</div>') if many else \
             ('<span class="sl-dim">Not assessed</span><div class="sl-help">Severity needs several consecutive windows; '
              f'this file has {s["n_windows"]}. The window result is shown instead.</div>')
@@ -487,7 +507,7 @@ def machines_page():
     with card("registered"):
         h("Registered machines")
         w = [1.05, 0.7, 1.25, 1.25, 1.0, 1.9, 0.7]
-        th(st.columns(w), ["Machine ID", "Type", "Name", "Model", "State", "Last analysis (UTC)", ""])
+        th(st.columns(w), ["Machine ID", "Type", "Name", "Model", "State", "Last analysis (PKT)", ""])
         for m in sorted(machines, key=lambda x: (not x["active"], x["model_group"])):
             f = fleet.get(m["id"], {})
             with st.container(key=f"row-mach-{m['id']}"):
@@ -565,7 +585,7 @@ def history_tab(m):
         st.error(str(e))
     ev = call(c.severity_events, m["id"], 30) or []
     html('<div class="sl-label" style="margin-top:12px">Severity changes</div>' +
-         ui.table(["Time (UTC)", "From", "To", "Reason"],
+         ui.table(["Time (PKT)", "From", "To", "Reason"],
                   [[ui.esc(ui.fmt_time(e["event_utc"])), ui.pill(e["from_state"]), ui.pill(e["to_state"]), ui.esc(e["reason"])] for e in ev],
                   empty="No severity changes yet."))
 
@@ -646,7 +666,7 @@ def monitoring_tab(m):
 def windows_tab(m):
     c = client()
     an = call(c.analyses, m["id"], 100) or []
-    html(ui.table(["Time (UTC)", "Source", "Level z", "Score (MSE)", "Window result", "Severity"],
+    html(ui.table(["Time (PKT)", "Source", "Level z", "Score (MSE)", "Window result", "Severity"],
                   [[ui.esc(ui.fmt_time(a["window_utc"])), ui.source_tag(a["source"]), f"<b>{a['z']:.1f}</b>", f"{a['score']:.4f}",
                     ui.clip_pill(a["clip_level"]), ui.pill(a["state"]) if a["state"] else '<span class="dim">-</span>'] for a in an],
                   ["high" if a["clip_level"] == "above_alarm_limit" else "" for a in an], num_cols=(2, 3),
@@ -711,7 +731,7 @@ def incidents_page():
             html('<div class="sl-help">No incidents match these filters.</div>')
         else:
             w = [0.9, 1, 0.95, 1.3, 0.7, 1.0, 1.2, 1.0]
-            th(st.columns(w), ["Incident", "Machine", "Severity", "Opened (UTC)", "Peak z", "Status", "Acknowledged", ""])
+            th(st.columns(w), ["Incident", "Machine", "Severity", "Opened (PKT)", "Peak z", "Status", "Acknowledged", ""])
             for i in inc:
                 with st.container(key=f"row-inc-{i['id']}"):
                     cols = st.columns(w, vertical_alignment="center")
@@ -751,8 +771,8 @@ def incident_detail(iid):
         html(f'<div class="sl-help" style="font-size:14.5px;color:#c3cfdb;margin:8px 0 14px">{text}</div>')
         html(ui.kv_grid([("Machine", ui.esc(code(grp)) + f' <span class="sl-dim">· {ui.esc(full["machine_name"])}</span>'),
                          ("Machine type", ui.esc(ui.machine_type_of(grp))), ("Incident", ui.inc_code(iid)),
-                         ("Highest severity", ui.pill("HIGH")), ("Start time (UTC)", ui.esc(ui.fmt_time(full["opened_utc"]))),
-                         ("End time (UTC)", ui.esc(ui.fmt_time(full["closed_utc"])) or "ongoing"),
+                         ("Highest severity", ui.pill("HIGH")), ("Start time (PKT)", ui.esc(ui.fmt_time(full["opened_utc"]))),
+                         ("End time (PKT)", ui.esc(ui.fmt_time(full["closed_utc"])) or "ongoing"),
                          ("Current status", ui.status_pill(full["status"])),
                          ("Peak level z", f"{full['peak_z']:.1f}"), ("Windows at HIGH", str(full["n_windows"])),
                          ("Acknowledged", f"yes, by {ui.esc(full['ack_by'])} at {ui.esc(ui.fmt_time(full['ack_utc']))}"
@@ -811,7 +831,7 @@ def incident_detail(iid):
                                                for e in reversed(events)], empty="None recorded in this period."))
             al = full.get("alerts", [])
             html('<div class="sl-label" style="margin-top:16px">Notifications</div>' +
-                 ui.table(["E-mail", "Status", "Time (UTC)"],
+                 ui.table(["E-mail", "Status", "Time (PKT)"],
                           [[ui.esc(ui.ALERT_KIND.get(a["kind"], a["kind"])) + f'<div class="dim">{ui.esc(a["recipient"])}</div>',
                             ui.alert_pill(a["status"]), ui.esc(ui.fmt_short(a["sent_utc"] or a["created_utc"]))] for a in reversed(al)],
                           empty="No notification recorded."))
@@ -869,8 +889,8 @@ def reports_page():
             spec["machine"] = b.selectbox("Machine", opts, index=opts.index(cur) if cur in opts else 0, key=f"rep_m_{rtype}",
                                           format_func=lambda i: "All machines" if i is None else mlabel[i])
             d1, d2 = st.columns(2)
-            spec["from"] = d1.date_input("From (UTC, optional)", value=None, key="rep_from", format="YYYY-MM-DD")
-            spec["to"] = d2.date_input("To (UTC, optional)", value=None, key="rep_to", format="YYYY-MM-DD")
+            spec["from"] = d1.date_input("From (PKT date, optional)", value=None, key="rep_from", format="YYYY-MM-DD")
+            spec["to"] = d2.date_input("To (PKT date, optional)", value=None, key="rep_to", format="YYYY-MM-DD")
             if rtype == "Machine report (PDF)":
                 spec["evidence"] = st.checkbox("Include the anomaly chart and evidence picture", True, key="rep_ev2")
         if st.button("Generate report", type="primary", key="rep_go"):
@@ -911,7 +931,7 @@ def report_preview(rtype, spec, incidents, machines):
         i = next(x for x in incidents if x["id"] == spec["incident"])
         lines += [("Report", f"Incident summary · {ui.inc_code(i['id'])}"), ("Machine", ui.esc(code(i["model_group"]))),
                   ("Type", ui.esc(ui.machine_type_of(i["model_group"]))), ("Operational severity", "HIGH"),
-                  ("Status", i["status"].upper()), ("Opened (UTC)", ui.esc(ui.fmt_time(i["opened_utc"]))),
+                  ("Status", i["status"].upper()), ("Opened (PKT)", ui.esc(ui.fmt_time(i["opened_utc"]))),
                   ("Peak level z", f"{i['peak_z']:.1f}"), ("Acknowledged", "yes" if i["acknowledged"] else "no"),
                   ("Fault diagnosis", "Not determined")]
     elif rtype in ("Machine report (PDF)", "Analysis data (CSV)"):
@@ -1000,7 +1020,7 @@ def settings_page():
         h("Administrator account")
         acc = call(c.account) or {}
         html(ui.kv_grid([("Username", ui.esc(acc.get("username", c.username))),
-                         ("Last sign-in (UTC)", ui.esc(ui.fmt_time(acc.get("last_login_utc"))) or "-")]))
+                         ("Last sign-in (PKT)", ui.esc(ui.fmt_time(acc.get("last_login_utc"))) or "-")]))
         with st.form("pw", clear_on_submit=True, border=False):
             cur = st.text_input("Current password", type="password")
             a, b = st.columns(2)
@@ -1065,7 +1085,7 @@ def settings_page():
     html('<div style="height:16px"></div>')
     with st.expander("Audit trail"):
         rows = call(c.audit, 200) or []
-        html(ui.table(["Time (UTC)", "User", "Action", "Detail"],
+        html(ui.table(["Time (PKT)", "User", "Action", "Detail"],
                       [[ui.esc(ui.fmt_time(r["created_utc"])), ui.esc(r["actor"]), ui.esc(r["action"]), ui.esc(r["detail"])] for r in rows],
                       empty="No audit entries."))
 
@@ -1088,7 +1108,7 @@ def email_delivery_card(mail: dict):
         last = mail.get("last_run") or {}
         cfg_rows += [("Automatic sending", f"every {mail.get('interval_s', 30):g} s" if mail.get("worker_running")
                       else "off (use Send pending now)"),
-                     ("Last run (UTC)", ui.esc(ui.fmt_time(last.get("time_utc"))) or "not yet")]
+                     ("Last run (PKT)", ui.esc(ui.fmt_time(last.get("time_utc"))) or "not yet")]
         counts = mail.get("counts", {})
         l, r = st.columns([1.2, 1], gap="medium")
         with l:
@@ -1117,7 +1137,7 @@ def email_delivery_card(mail: dict):
             html(ui.banner("info", ui.esc(st.session_state.pop("mail_flash"))))
         rows = call(c.alerts, None, 50) or []
         html('<div class="sl-label" style="margin-top:8px">Recent e-mails</div>' +
-             ui.table(["Created (UTC)", "Type", "Recipient", "Subject", "Status", "Tries", "Problem"],
+             ui.table(["Created (PKT)", "Type", "Recipient", "Subject", "Status", "Tries", "Problem"],
                       [[ui.esc(ui.fmt_short(a["created_utc"])), ui.esc(ui.ALERT_KIND.get(a["kind"], a["kind"])),
                         ui.esc(a["recipient"]), ui.esc(a["subject"]), ui.alert_pill(a["status"]), str(a["attempts"]),
                         f'<span class="dim">{ui.esc(a["last_error"])}</span>'] for a in rows],
@@ -1154,7 +1174,7 @@ def main():
         for key, label in ADMIN:
             st.button(label, key=f"nav_{key}", type="primary" if page == key else "secondary", use_container_width=True,
                       on_click=goto, args=(key,))
-        html(f'<div class="sl-nav-sep"></div><div class="sl-user">Signed in as {ui.esc(c.username)} · times in UTC</div>')
+        html(f'<div class="sl-nav-sep"></div><div class="sl-user">Signed in as {ui.esc(c.username)} · times in PKT (Asia/Karachi)</div>')
         if st.button("Sign out", key="nav_signout", use_container_width=True):
             call(c.logout)
             st.session_state.clear()

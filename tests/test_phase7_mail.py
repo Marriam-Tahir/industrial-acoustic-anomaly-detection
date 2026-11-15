@@ -132,9 +132,9 @@ def test_reminders_for_open_unacknowledged_incidents(conn, tmp_path):
 def test_config_file_and_environment(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "smtp.env").write_text(
-        "# comment\nSL_SMTP_HOST=smtp.gmail.com\nSL_SMTP_USER=me@gmail.com\nSL_SMTP_PASSWORD=abcd efgh ijkl mnop\n")
+        "# comment\nSL_SMTP_HOST=smtp.gmail.com\nSL_SMTP_USER=me@gmail.com\nSL_SMTP_PASSWORD=wxyz qrst uvwx yzab\n")
     c = notifier.load_mail_config(tmp_path, environ={})
-    assert c.mode == "smtp" and c.port == 587 and c.security == "starttls" and c.password == "abcdefghijklmnop"
+    assert c.mode == "smtp" and c.port == 587 and c.security == "starttls" and c.password == "wxyzqrstuvwxyzab"
     assert c.sender == "me@gmail.com" and "password" not in str(c.public()).replace("password_set", "")
     assert notifier.load_mail_config(tmp_path, environ={"SL_SMTP_HOST": "other", "SL_SMTP_SECURITY": "ssl"}).port == 465
     assert notifier.load_mail_config(tmp_path / "none", environ={}).mode == "test"

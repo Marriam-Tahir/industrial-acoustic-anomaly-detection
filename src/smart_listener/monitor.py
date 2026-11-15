@@ -333,7 +333,8 @@ class MonitorManager:
 def analyze_upload(conn, analyzer, machine: dict, prepared, filename: str, evidence_dir=None) -> dict:
     """Analyse the windows of an uploaded file. Every window is saved (source 'upload') with its clip level.
 
-    An upload never changes the machine's current alert state, never opens an incident and never creates an alert:
+    An upload never changes the machine's current alert state and never opens an incident (the API may e-mail a
+    non-normal result to the owner afterwards, see alerts.record_analysis_alert):
     it is a manual check of a recording, not live monitoring. The severity engine is run over the file's windows only
     to tell the user what alert level THIS FILE alone would show (`file_state`)."""
     group = machine["model_group"]
