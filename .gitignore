@@ -262,3 +262,5 @@ data/app/
 *.db-shm
 .env
 config/smtp.env
+
+demo_audio/

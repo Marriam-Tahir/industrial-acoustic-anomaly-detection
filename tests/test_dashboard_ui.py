@@ -15,11 +15,18 @@ def test_incident_codes_and_machine_types():
     assert ui.machine_type_of("pump_id_04") == "Pump" and ui.machine_type_of("fan_id_00") == "Fan"
 
 
-def test_times_are_shown_in_12_hour_utc():
-    assert ui.fmt_time("2026-11-09T10:30:00+00:00") == "10:30 AM, 09 Nov 2026"
-    assert ui.fmt_time("2026-11-09T22:05:00+00:00", date=False) == "10:05 PM"
-    assert ui.fmt_time("2026-11-09T15:00:00+05:00") == "10:00 AM, 09 Nov 2026"      # converted to UTC
-    assert ui.fmt_time("2026-11-09T10:30:00") == "10:30 AM, 09 Nov 2026"            # no zone = UTC
+def test_times_are_stored_utc_and_shown_in_pakistan_time():
+    assert ui.fmt_time("2026-11-09T10:30:00+00:00") == "3:30 PM, 09 Nov 2026"         # UTC + 5 h
+    assert ui.fmt_time("2026-11-09T22:05:00+00:00", date=False) == "3:05 AM"
+    assert ui.fmt_time("2026-11-09T21:00:00+00:00") == "2:00 AM, 10 Nov 2026"         # next day in Pakistan
+    assert ui.fmt_time("2026-11-09T15:00:00+05:00") == "3:00 PM, 09 Nov 2026"         # already PKT: unchanged
+    assert ui.fmt_time("2026-11-09T10:30:00") == "3:30 PM, 09 Nov 2026"               # no zone = stored UTC
+    assert ui.fmt_short("2026-11-09T19:30:00+00:00") == "12:30 AM · 10 Nov"
+    assert ui.local_iso("2026-11-09T10:30:00+00:00") == "2026-11-09T15:30:00+05:00" and ui.local_iso(None) == ""
+    assert ui.local_day_start_utc("2026-11-10") == "2026-11-09T19:00:00+00:00"
+    assert ui.local_day_end_utc("2026-11-10") == "2026-11-10T19:00:00+00:00"
+    assert ui.TZ_NAME == "Asia/Karachi" and ui.LOCAL_TZ.utcoffset(None if not hasattr(ui.LOCAL_TZ, "key") else
+                                                                   __import__("datetime").datetime(2026, 6, 1)).total_seconds() == 5 * 3600
     assert ui.fmt_time(None) == "" and ui.fmt_time("garbage") == ""
 
 

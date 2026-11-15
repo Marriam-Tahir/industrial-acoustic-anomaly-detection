@@ -252,7 +252,7 @@ def test_incident_detail_acknowledge_and_note(server, api_client):
     simulated_run(api_client)
     at = page(run_app(server), "incidents")
     t = md(at)
-    for text in ("Incident history", "INC-001 · FAN-06", "Highest severity", "Start time (UTC)", "Current status", "CLOSED",
+    for text in ("Incident history", "INC-001 · FAN-06", "Highest severity", "Start time (PKT)", "Current status", "CLOSED",
                  "has not determined a physical fault", "SIMULATED MONITORING", "PENDING"):
         assert text in t, text
     btn(at, "Acknowledge incident").click()
@@ -318,3 +318,25 @@ def test_sign_out_returns_to_login(server):
     at.button(key="nav_signout").click()
     at.run()
     assert at.text_input and at.text_input[1].label == "Password"
+
+
+def test_upload_result_shows_whether_the_owner_was_e_mailed_and_times_in_pkt(server, api_client):
+    import io as _io
+    import soundfile as _sf
+    m = new_machine(api_client)
+    rng = np.random.default_rng(5)
+
+    def wav(abnormal):
+        b = _io.BytesIO()
+        _sf.write(b, synth_clip("fan", abnormal, rng), SR, format="WAV", subtype="PCM_16")
+        return b.getvalue()
+    bad = api_client.upload(m["id"], "fan_id_06_abnormal.wav", wav(True))
+    ok = api_client.upload(m["id"], "fan_id_06_normal.wav", wav(False))
+    at = page(run_app(server), "analyze")
+    at.session_state["an_result"] = bad
+    at.run()
+    assert "E-mail to owner@example.com" in md(at) and "PDF report" in md(at)
+    at.session_state["an_result"] = ok
+    at.run()
+    assert "E-mail: not needed" in md(at)
+    assert "times in PKT (Asia/Karachi)" in md(at)

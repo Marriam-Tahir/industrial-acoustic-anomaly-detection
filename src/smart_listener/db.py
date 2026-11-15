@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   incident_id INTEGER REFERENCES incidents(id),
   machine_id INTEGER NOT NULL REFERENCES machines(id),
-  kind TEXT NOT NULL CHECK (kind IN ('high_opened', 'reminder', 'closed', 'test')),
+  kind TEXT NOT NULL CHECK (kind IN ('high_opened', 'reminder', 'closed', 'test', 'analysis')),
   recipient TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
@@ -175,7 +175,8 @@ def connect(path=None) -> sqlite3.Connection:
 
 # Columns added after schema version 1 was released. Adding a nullable column keeps every existing row, so these do not
 # need a new schema version; each is added once, the first time a newer program opens an older database.
-ADDED_COLUMNS = [("alerts", "next_attempt_utc", "TEXT")]   # Phase 7: when a failed e-mail may be tried again
+ADDED_COLUMNS = [("alerts", "next_attempt_utc", "TEXT"),    # Phase 7: when a failed e-mail may be tried again
+                 ("alerts", "attachments_json", "TEXT")]   # upload e-mails: PDF/CSV files to attach (JSON list)
 
 
 def _add_missing_columns(conn: sqlite3.Connection) -> None:
@@ -186,10 +187,31 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
+def _allow_analysis_alerts(conn: sqlite3.Connection) -> None:
+    """Databases created before upload e-mails existed only allow the alert kinds high_opened, reminder, closed and
+    test. SQLite cannot change a CHECK rule in place, so the alerts table is copied once into a table with the wider
+    rule (all rows, ids and columns kept), inside one transaction: either everything is copied or nothing changes."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'alerts'").fetchone()
+    if row is None or "'analysis'" in row[0] or "'closed', 'test')" not in row[0]:
+        return                                         # already allowed, or no rule on the kind column at all
+    new_sql = row[0].replace("'closed', 'test')", "'closed', 'test', 'analysis')", 1)
+    cols = ", ".join(r[1] for r in conn.execute("PRAGMA table_info(alerts)").fetchall())
+    conn.execute("PRAGMA foreign_keys = OFF")          # nothing points at alerts, but keep the copy free of checks
+    try:
+        with conn:
+            conn.execute(new_sql.replace("CREATE TABLE alerts", "CREATE TABLE alerts_upgrade", 1))
+            conn.execute(f"INSERT INTO alerts_upgrade ({cols}) SELECT {cols} FROM alerts")
+            conn.execute("DROP TABLE alerts")
+            conn.execute("ALTER TABLE alerts_upgrade RENAME TO alerts")
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create every table that does not exist yet. Safe to run again and again; never deletes data."""
     conn.executescript(SCHEMA)
     _add_missing_columns(conn)
+    _allow_analysis_alerts(conn)
     with conn:
         conn.execute("INSERT OR IGNORE INTO schema_info(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
     row = conn.execute("SELECT value FROM schema_info WHERE key = 'schema_version'").fetchone()

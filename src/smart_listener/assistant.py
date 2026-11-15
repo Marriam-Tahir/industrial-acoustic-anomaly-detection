@@ -152,7 +152,7 @@ def answer_from_context(c: dict, question: str) -> dict:
         ack = (f" Acknowledged by {i['ack_by']} at {fmt_time(i['ack_utc'])}." if i["acknowledged"]
                else " It has not been acknowledged.")
         re_ = f" HIGH returned and re-opened it {i['n_reopened']} time(s)." if i["n_reopened"] else ""
-        secs = [_sec("record", "Timeline", f"{code} opened at {fmt_time(i['opened_utc'])} (UTC). {end}{re_}{ack}")]
+        secs = [_sec("record", "Timeline", f"{code} opened at {fmt_time(i['opened_utc'])} (PKT). {end}{re_}{ack}")]
     elif kind == "notified":
         if c["alerts"]:
             lines = "; ".join(f"{ALERT_KIND.get(a['kind'], a['kind'])}: {alert_text(a)}" for a in c["alerts"])
